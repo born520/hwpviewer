@@ -1,36 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>HWP.js Test</title>
+    <title>HWP.js Viewer</title>
     <meta charset="UTF-8">
+    <!-- 필요한 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.0.4/pako.min.js"></script>
+    <script src="https://unpkg.com/cfb/dist/cfb.js"></script>
     <style>
-        /* (선택 사항) 기본 스타일 초기화 - hwp.js에 포함되어 있지만, 혹시 모르니 추가 */
-        body, div, h1, h2, h3, h4, h5, h6, p, ul, ol, li, dl, dt, dd, table, th, td, form, fieldset, legend, input, textarea, button, select {
-            margin: 0;
-            padding: 0;
+        body {
+            font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+            margin: 20px;
+        }
+        #hwp-container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            min-height: 400px;
+        }
+        .hwp-page {
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .file-input {
+            margin-bottom: 20px;
+        }
+        .info {
+            margin-bottom: 20px;
+            color: #555;
         }
     </style>
 </head>
 <body>
+    <h1>한글 문서 뷰어</h1>
+    
+    <div class="info">
+        <p>로컬 한글(.hwp) 파일을 선택하여 브라우저에서 바로 볼 수 있습니다.</p>
+    </div>
+    
+    <div class="file-input">
+        <input type="file" id="hwp-file" accept=".hwp" />
+    </div>
+    
     <div id="hwp-container"></div>
 
-    <<script src="hwpjs.js"></script>  
+    <script src="hwpjs.js"></script>
     <script>
         const container = document.getElementById('hwp-container');
-
-        HWP.open(
-            'test.hwp', // HWP 파일 이름
-            container,    // HTML을 표시할 div
-            {
-                type: 'array-buffer' // 파일 로딩 방식
-            }
-        )
-        .then(function() {
-            console.log('HWP 파일 로드 완료');
-        })
-        .catch(function(error) {
-            console.error('HWP 파일 로드 실패:', error);
-            container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
+        const fileInput = document.getElementById('hwp-file');
+        
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            container.innerHTML = '문서를 로드하는 중입니다...';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    // hwpjs 객체 생성 및 문서 파싱
+                    const hwp = new hwpjs(e.target.result);
+                    
+                    // HTML로 변환하여 표시
+                    container.innerHTML = hwp.getHtml();
+                    console.log('HWP 파일 로드 완료');
+                } catch (error) {
+                    console.error('HWP 파일 로드 실패:', error);
+                    container.innerHTML = '<div style="color: red;">HWP 파일 로드에 실패했습니다.</div>';
+                }
+            };
+            
+            reader.onerror = function() {
+                container.innerHTML = '<div style="color: red;">파일을 읽는 중 오류가 발생했습니다.</div>';
+            };
+            
+            // 파일을 ArrayBuffer로 읽기
+            reader.readAsArrayBuffer(file);
         });
     </script>
 </body>

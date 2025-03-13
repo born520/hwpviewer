@@ -753,3 +753,374 @@ hwpjs.prototype.createStyle = function () {
     console.error('createStyle 함수 오류:', error);
   }
 };
+// getText 함수 추가
+hwpjs.prototype.getText = function() {
+  try {
+    if (typeof this.hwp.Text !== 'string') {
+      this.hwp.Text = '';
+    }
+    return this.hwp.Text.replace(/(\n|\r|\r\n|\n\r)/g, '<br>');
+  } catch (error) {
+    console.error("getText 함수 오류:", error);
+    return "";
+  }
+};
+
+// getPrvText 함수 추가
+hwpjs.prototype.getPrvText = function () {
+  try {
+    if (!this.hwp.PrvText || !this.hwp.PrvText.content) {
+      return { PrvText: "" };
+    }
+    
+    const result = {
+      PrvText: this.textDecoder(this.hwp.PrvText.content, 'utf-16le'),
+    };
+    return result;
+  } catch (error) {
+    console.error("getPrvText 함수 오류:", error);
+    return { PrvText: "" };
+  }
+};
+
+// getPrvImage 함수 추가
+hwpjs.prototype.getPrvImage = function () {
+  try {
+    if (!this.hwp.PrvImage || !this.hwp.PrvImage.content) {
+      return null;
+    }
+    return this.getImage(this.hwp.PrvImage.content);
+  } catch (error) {
+    console.error("getPrvImage 함수 오류:", error);
+    return null;
+  }
+};
+
+// getImage 함수 추가
+hwpjs.prototype.getImage = function(uint_8, type = "png") {
+  try {
+    const image = new Image();
+    image.src = URL.createObjectURL(new Blob([new Uint8Array(uint_8)], { type: `image/${type}` }));
+    return image;
+  } catch (error) {
+    console.error("getImage 함수 오류:", error);
+    return null;
+  }
+};
+
+// getBinImage 함수 추가
+hwpjs.prototype.getBinImage = function(i) {
+  try {
+    // BIN_DATA 찾기
+    const doc = Array.isArray(this.hwp.DocInfo.data) ? 
+      this.hwp.DocInfo.data.filter(doc => {
+        return doc && doc.name === "HWPTAG_BIN_DATA" && doc.attribute && doc.attribute.image === true;
+      }) : [];
+    
+    if (!doc || !doc[i]) {
+      console.warn("이미지 데이터를 찾을 수 없습니다:", i);
+      return null;
+    }
+    
+    const path = doc[i].attribute.path;
+    const extension = doc[i].attribute.extension;
+    
+    if (!path || !extension) {
+      console.warn("이미지 경로 또는 확장자 정보가 없습니다");
+      return null;
+    }
+    
+    // 이미지 파일 인덱스 찾기
+    const Idx = Object.values(this.cfb.FullPaths).findIndex(fullpath => {
+      return fullpath === path;
+    });
+    
+    if (Idx === -1 || !this.cfb.FileIndex[Idx]) {
+      console.warn("이미지 파일을 찾을 수 없습니다:", path);
+      return null;
+    }
+    
+    const data = this.cfb.FileIndex[Idx];
+    
+    // 압축 해제
+    const uncompress = pako.inflate(this.uint_8(data.content), { windowBits: -15 });
+    
+    // 이미지 생성
+    const image = new Image();
+    image.src = URL.createObjectURL(new Blob([new Uint8Array(uncompress)], { type: `image/${extension}` }));
+    
+    return image;
+  } catch (error) {
+    console.error("getBinImage 함수 오류:", error);
+    return null;
+  }
+};
+
+// textDecoder 함수 추가
+hwpjs.prototype.textDecoder = function(uint_8, type = 'utf8') {
+  try {
+    uint_8 = new Uint8Array(uint_8);
+    const Decoder = new TextDecoder(type);
+    return Decoder.decode(uint_8);
+  } catch (error) {
+    console.error("textDecoder 함수 오류:", error);
+    return "";
+  }
+};
+
+// uint_8 함수 추가
+hwpjs.prototype.uint_8 = function(uint_8) {
+  try {
+    return new Uint8Array(uint_8);
+  } catch (error) {
+    console.error("uint_8 함수 오류:", error);
+    return new Uint8Array();
+  }
+};
+
+// hwpTextCss 함수 추가 (간단한 버전)
+hwpjs.prototype.hwpTextCss = function(paragraph, opt = true) {
+  try {
+    const result = [];
+    
+    // paragraph가 없으면 빈 div 반환
+    if (!paragraph) {
+      const div = document.createElement('div');
+      div.textContent = '';
+      return [div];
+    }
+    
+    const { text, parashape, Style, line_segment, start_line, bullet } = paragraph;
+    
+    let div = document.createElement('div');
+    const container = document.createElement('div');
+    container.style.position = "relative";
+    
+    div.appendChild(container);
+    
+    // 스타일 클래스 적용
+    if (Style) {
+      container.classList.add(`${Style}`);
+    }
+    
+    if (parashape) {
+      container.classList.add(parashape);
+    } else {
+      container.classList.add("para-normal");
+    }
+    
+    // Line segment 처리
+    if (line_segment && opt !== false) {
+      div.style.top = parseFloat(line_segment[0].start_line).hwpInch();
+      div.style.position = "absolute";
+    }
+    
+    // 시작 라인 정보 저장
+    div.dataset.start_line = start_line;
+    
+    // 글머리 기호 처리
+    if (bullet !== undefined) {
+      const span = document.createElement('span');
+      span.style.position = "absolute";
+      span.style.top = "0";
+      span.style.display = "inline-flex";
+      
+      if (bullet.width) {
+        span.style.width = `${bullet.width / 100 * 2}pt`;
+      }
+      
+      if (bullet.space) {
+        div.style.marginLeft = `${bullet.space.hwpInch()}`;
+      }
+      
+      if (bullet.char && bullet.char.char) {
+        span.innerHTML = bullet.char.char;
+      }
+      
+      div.appendChild(span);
+    }
+    
+    // 텍스트가 없으면 빈 p 태그 생성
+    if (!text) {
+      const p = document.createElement('p');
+      p.className = "para-normal";
+      if (parashape) p.classList.add(parashape);
+      container.appendChild(p);
+      return [div];
+    }
+    
+    // line_segment가 없으면 텍스트만 표시
+    if (!line_segment) {
+      container.textContent = text;
+      return [div];
+    }
+    
+    // 라인 세그먼트가 있으면 p 태그로 분리
+    for (let i = 0; i < line_segment.length; i++) {
+      const p = document.createElement('p');
+      
+      // bullet 처리
+      if (bullet !== undefined) {
+        if (bullet.width) {
+          p.style.paddingLeft = `${bullet.width / 100 * 2}pt`;
+        } else {
+          p.style.paddingLeft = `15pt`;
+        }
+      }
+      
+      const start = line_segment[i].start_text;
+      if (line_segment[i].sagment_width) {
+        p.style.width = line_segment[i].sagment_width.hwpInch();
+      }
+      
+      const end = i < line_segment.length - 1 ? line_segment[i+1].start_text : text.length;
+      p.dataset.start = start;
+      p.dataset.end = end;
+      
+      // 텍스트 분할
+      p.textContent = text.substring(start, end);
+      
+      container.appendChild(p);
+    }
+    
+    result.push(div);
+    return result;
+  } catch (error) {
+    console.error("hwpTextCss 함수 오류:", error);
+    const div = document.createElement('div');
+    div.textContent = paragraph && paragraph.text ? paragraph.text : '';
+    return [div];
+  }
+};
+
+// getHtml 함수 추가 (간단한 버전)
+hwpjs.prototype.getHtml = function() {
+  try {
+    const wrapper = document.createElement('article');
+    wrapper.className = "hwp-wrapper";
+    
+    const page = document.createElement('section');
+    page.className = "hwp-page";
+    
+    // 페이지 기본 스타일 설정
+    page.style.position = "relative";
+    page.style.width = "100%";
+    page.style.padding = "20px";
+    page.style.boxSizing = "border-box";
+    page.style.backgroundColor = "white";
+    
+    const content = document.createElement('div');
+    content.className = "hwp-content";
+    
+    page.appendChild(content);
+    wrapper.appendChild(page);
+    
+    // ObjectHwp 함수로 콘텐츠 가져오기
+    try {
+      const result = this.ObjectHwp();
+      
+      if (Array.isArray(result) && result.length > 0) {
+        result.forEach(data => {
+          if (data.type === "tbl ") {
+            // 테이블 렌더링
+            try {
+              const tableElements = this.hwpTable(data);
+              tableElements.forEach(element => {
+                content.appendChild(element);
+              });
+            } catch (tableError) {
+              console.warn("테이블 렌더링 오류:", tableError);
+              
+              // 오류 시 텍스트로 대체
+              const div = document.createElement('div');
+              div.textContent = "[테이블 렌더링 오류]";
+              content.appendChild(div);
+            }
+          } else if (data.type === "$rec") {
+            // 텍스트 박스 렌더링
+            try {
+              if (data.textbox && data.textbox.paragraph) {
+                const div = document.createElement('div');
+                div.style.border = "1px solid #ddd";
+                div.style.padding = "10px";
+                div.style.margin = "10px 0";
+                
+                data.textbox.paragraph.forEach(para => {
+                  if (para && para.text) {
+                    const p = document.createElement('p');
+                    p.textContent = para.text;
+                    div.appendChild(p);
+                  }
+                });
+                
+                content.appendChild(div);
+              }
+            } catch (boxError) {
+              console.warn("텍스트 박스 렌더링 오류:", boxError);
+            }
+          } else if (data.type === "paragraph") {
+            // 단락 렌더링
+            try {
+              const paraElements = this.hwpTextCss(data.paragraph);
+              paraElements.forEach(element => {
+                content.appendChild(element);
+              });
+            } catch (paraError) {
+              console.warn("단락 렌더링 오류:", paraError);
+              
+              // 오류 시 텍스트로 대체
+              if (data.paragraph && data.paragraph.text) {
+                const div = document.createElement('div');
+                div.textContent = data.paragraph.text;
+                content.appendChild(div);
+              }
+            }
+          }
+        });
+      } else {
+        // 결과가 없으면 텍스트만 표시
+        const div = document.createElement('div');
+        div.textContent = this.getText();
+        content.appendChild(div);
+      }
+    } catch (objectError) {
+      console.error("ObjectHwp 처리 오류:", objectError);
+      
+      // 오류 시 텍스트만 표시
+      const div = document.createElement('div');
+      div.textContent = this.getText();
+      content.appendChild(div);
+    }
+    
+    return wrapper.outerHTML;
+  } catch (error) {
+    console.error("getHtml 함수 오류:", error);
+    
+    // 심각한 오류 시 기본 HTML 반환
+    return `<div style="padding: 20px;">${this.getText().replace(/\n/g, '<br>')}</div>`;
+  }
+};
+
+// getPagedef 함수 추가
+hwpjs.prototype.getPagedef = function() {
+  try {
+    let result = [];
+    
+    if (Array.isArray(this.hwp.BodyText.data)) {
+      this.hwp.BodyText.data.forEach(section => {
+        if (!section.data) return;
+        
+        Object.values(section.data).forEach(item => {
+          if (item.name === "HWPTAG_PAGE_DEF") {
+            result.push(item);
+          }
+        });
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    console.error("getPagedef 함수 오류:", error);
+    return [];
+  }
+};

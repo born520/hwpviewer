@@ -7,20 +7,43 @@
 <body>
     <div id="hwp-container"></div>
     
-    <!-- hwp.js 라이브러리를 defer 속성으로 로드 -->
-    <script defer src="https://cdn.jsdelivr.net/npm/hwp.js@0.0.2/dist/hwp.js"></script>
-    
-    <!-- 스크립트 로드 확인 후 실행 -->
+    <!-- 스크립트 로드 확인 -->
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // 라이브러리가 완전히 로드되도록 약간의 시간 지연
-            setTimeout(function() {
-                const container = document.getElementById('hwp-container');
+        // 스크립트 로드 함수
+        function loadScript(url, callback) {
+            const script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = url;
+            script.onload = callback;
+            script.onerror = function() {
+                console.error('스크립트 로드 실패: ' + url);
+            };
+            document.head.appendChild(script);
+        }
+        
+        // 라이브러리 로드 시도
+        loadScript('https://cdn.jsdelivr.net/npm/hwp.js/dist/hwp.js', function() {
+            console.log('hwp.js 스크립트 로드 완료');
+            init();
+        });
+        
+        // 다른 버전 시도
+        function tryAlternative() {
+            console.log('대체 버전 시도 중...');
+            loadScript('https://cdn.jsdelivr.net/npm/@hwpjs/hwp.js/dist/hwp.js', function() {
+                console.log('@hwpjs/hwp.js 스크립트 로드 완료');
+                init();
+            });
+        }
+        
+        // 초기화 함수
+        function init() {
+            const container = document.getElementById('hwp-container');
+            
+            if (window.HWP || typeof HWP !== 'undefined') {
+                console.log('HWP 객체 발견: ', HWP);
                 
-                // HWP 객체가 window에 정의되었는지 확인
-                if (window.HWP || typeof HWP !== 'undefined') {
-                    console.log('HWP 라이브러리가 성공적으로 로드되었습니다.');
-                    
+                try {
                     HWP.open(
                         'test.hwp',
                         container,
@@ -33,22 +56,23 @@
                     })
                     .catch(function(error) {
                         console.error('HWP 파일 로드 실패:', error);
-                        container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
+                        container.innerText = 'HWP 파일 로드에 실패했습니다: ' + error.message;
                     });
-                } else {
-                    console.error('HWP 라이브러리가 로드되지 않았습니다.');
-                    container.innerText = 'HWP 라이브러리 로드에 실패했습니다.';
-                    
-                    // 디버깅 정보 출력
-                    console.log('window 객체에 존재하는 주요 속성:');
-                    for (let key in window) {
-                        if (key.includes('HWP') || key.includes('hwp')) {
-                            console.log(key);
-                        }
-                    }
+                } catch (e) {
+                    console.error('HWP 초기화 오류:', e);
+                    container.innerText = 'HWP 초기화 오류: ' + e.message;
                 }
-            }, 1000); // 1초 지연
-        });
+            } else {
+                console.error('HWP 객체를 찾을 수 없습니다.');
+                container.innerText = 'HWP 라이브러리가 정상적으로 로드되지 않았습니다.';
+                
+                // 대체 버전 시도
+                if (!window.triedAlternative) {
+                    window.triedAlternative = true;
+                    tryAlternative();
+                }
+            }
+        }
     </script>
 </body>
 </html>

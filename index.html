@@ -1,43 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>HWP.js Test</title>
+    <title>한글 파일 뷰어</title>
     <meta charset="UTF-8">
+    <script src="https://unpkg.com/@naradesign/hwptovml/dist/hwptovml.js"></script>
 </head>
 <body>
-    <div id="hwp-container"></div>
-    
-    <!-- 최신 버전의 hwp.js 직접 링크 -->
-    <script src="https://github.com/hwpjs/hwp.js/releases/download/v0.0.2/hwp.js"></script>
+    <div id="hwp-viewer" style="width: 100%; height: 800px;"></div>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const container = document.getElementById('hwp-container');
+            const viewer = document.getElementById('hwp-viewer');
+            const hwpUrl = 'test.hwp'; // GitHub 저장소에 업로드한 hwp 파일 경로
             
-            // 약간의 지연 후 실행 (스크립트 로드 시간 고려)
-            setTimeout(function() {
-                if (typeof HWP !== 'undefined') {
-                    console.log('HWP 라이브러리 로드 성공');
-                    
-                    HWP.open(
-                        'test.hwp',
-                        container,
-                        {
-                            type: 'array-buffer'
-                        }
-                    )
+            // hwptovml 라이브러리를 사용하여 한글 파일 로드
+            if (typeof hwptovml !== 'undefined') {
+                hwptovml.hwpToVml(hwpUrl, viewer)
                     .then(function() {
-                        console.log('HWP 파일 로드 완료');
+                        console.log('한글 파일 로드 완료');
                     })
                     .catch(function(error) {
-                        console.error('HWP 파일 로드 실패:', error);
-                        container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
+                        console.error('한글 파일 로드 실패:', error);
+                        viewer.innerText = '한글 파일 로드에 실패했습니다.';
                     });
-                } else {
-                    console.error('HWP 라이브러리가 로드되지 않았습니다.');
-                    container.innerText = 'HWP 라이브러리 로드에 실패했습니다.';
-                }
-            }, 1000);
+            } else {
+                viewer.innerText = '한글 뷰어 라이브러리가 로드되지 않았습니다.';
+            }
         });
     </script>
 </body>

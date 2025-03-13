@@ -26,6 +26,11 @@
         .error {
             color: red;
         }
+        #hwp-text {
+            white-space: pre-wrap;
+            font-family: 'Malgun Gothic', sans-serif;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -38,11 +43,14 @@
     <div id="status" class="status">파일을 선택해주세요.</div>
     <div id="error" class="error"></div>
     
-    <div id="hwp-container"></div>
+    <div id="hwp-container">
+        <div id="hwp-text"></div>
+    </div>
 
     <script src="hwpjs.js"></script>
     <script>
         const container = document.getElementById('hwp-container');
+        const hwpText = document.getElementById('hwp-text');
         const fileInput = document.getElementById('hwp-file');
         const statusEl = document.getElementById('status');
         const errorEl = document.getElementById('error');
@@ -79,6 +87,7 @@
         
         fileInput.addEventListener('change', async function(e) {
             errorEl.textContent = ''; // 이전 오류 메시지 지우기
+            hwpText.textContent = ''; // 이전 내용 지우기
             
             if (!checkDependencies()) {
                 return;
@@ -91,7 +100,6 @@
             }
             
             updateStatus('문서를 로드하는 중입니다...');
-            container.innerHTML = '';
             
             try {
                 // 파일을 ArrayBuffer로 읽기
@@ -104,11 +112,32 @@
                 // hwpjs 객체 생성 시도
                 try {
                     const hwp = new hwpjs(arrayBuffer);
-                    updateStatus('문서를 파싱했습니다. 렌더링 중...');
+                    updateStatus('문서를 파싱했습니다.');
                     
-                    // HTML로 변환하여 표시
-                    container.innerHTML = hwp.getHtml();
-                    updateStatus('HWP 파일 로드 완료');
+                    // 전체 HTML 렌더링 대신 텍스트만 추출하여 표시
+                    // 이렇게 하면 복잡한 구조에서 발생하는 오류를 우회할 수 있습니다
+                    const extractedText = hwp.getText();
+                    hwpText.textContent = extractedText;
+                    updateStatus('HWP 파일에서 텍스트 추출 완료');
+                    
+                    // 이미지가 있는 경우 표시 시도
+                    try {
+                        const imgCount = hwp.hwp.ImageCnt || 0;
+                        if (imgCount > 0) {
+                            updateStatus(`HWP 파일에서 텍스트 추출 완료 (이미지 ${imgCount}개 포함)`);
+                            for (let i = 0; i < imgCount; i++) {
+                                try {
+                                    const img = hwp.getBinImage(i);
+                                    container.appendChild(img);
+                                } catch (imgErr) {
+                                    console.warn('이미지 추출 오류:', imgErr);
+                                }
+                            }
+                        }
+                    } catch (imgCountErr) {
+                        console.warn('이미지 정보 확인 오류:', imgCountErr);
+                    }
+                    
                 } catch (parseError) {
                     showError('문서 파싱 중 오류 발생: ' + parseError.message);
                     console.error('파싱 오류 세부정보:', parseError);

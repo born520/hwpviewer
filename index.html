@@ -1,31 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>한글 파일 뷰어</title>
+    <title>HWP.js Test</title>
     <meta charset="UTF-8">
-    <script src="https://unpkg.com/@naradesign/hwptovml/dist/hwptovml.js"></script>
+    <style>
+        /* (선택 사항) 기본 스타일 초기화 - hwp.js에 포함되어 있지만, 혹시 모르니 추가 */
+        body, div, h1, h2, h3, h4, h5, h6, p, ul, ol, li, dl, dt, dd, table, th, td, form, fieldset, legend, input, textarea, button, select {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
 </head>
 <body>
-    <div id="hwp-viewer" style="width: 100%; height: 800px;"></div>
-    
+    <div id="hwp-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@hwpjs/hwp.js@latest/dist/hwp.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const viewer = document.getElementById('hwp-viewer');
-            const hwpUrl = 'test.hwp'; // GitHub 저장소에 업로드한 hwp 파일 경로
-            
-            // hwptovml 라이브러리를 사용하여 한글 파일 로드
-            if (typeof hwptovml !== 'undefined') {
-                hwptovml.hwpToVml(hwpUrl, viewer)
-                    .then(function() {
-                        console.log('한글 파일 로드 완료');
-                    })
-                    .catch(function(error) {
-                        console.error('한글 파일 로드 실패:', error);
-                        viewer.innerText = '한글 파일 로드에 실패했습니다.';
-                    });
-            } else {
-                viewer.innerText = '한글 뷰어 라이브러리가 로드되지 않았습니다.';
+        const container = document.getElementById('hwp-container');
+
+        HWP.open(
+            'test.hwp', // HWP 파일 이름
+            container,    // HTML을 표시할 div
+            {
+                type: 'array-buffer' // 파일 로딩 방식
             }
+        )
+        .then(function() {
+            console.log('HWP 파일 로드 완료');
+        })
+        .catch(function(error) {
+            console.error('HWP 파일 로드 실패:', error);
+            container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
         });
     </script>
 </body>

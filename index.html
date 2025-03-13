@@ -3,36 +3,52 @@
 <head>
     <title>HWP.js Test</title>
     <meta charset="UTF-8">
-    <script src="https://cdn.jsdelivr.net/npm/@hwpjs/hwp.js@latest/dist/hwp.js"></script>
 </head>
 <body>
     <div id="hwp-container"></div>
+    
+    <!-- hwp.js 라이브러리를 defer 속성으로 로드 -->
+    <script defer src="https://cdn.jsdelivr.net/npm/hwp.js@0.0.2/dist/hwp.js"></script>
+    
+    <!-- 스크립트 로드 확인 후 실행 -->
     <script>
-        // 스크립트가 완전히 로드된 후 실행
-        window.onload = function() {
-            const container = document.getElementById('hwp-container');
-            
-            // HWP 객체가 정의되었는지 확인
-            if (typeof HWP !== 'undefined') {
-                HWP.open(
-                    'test.hwp',
-                    container,
-                    {
-                        type: 'array-buffer'
+        document.addEventListener('DOMContentLoaded', function() {
+            // 라이브러리가 완전히 로드되도록 약간의 시간 지연
+            setTimeout(function() {
+                const container = document.getElementById('hwp-container');
+                
+                // HWP 객체가 window에 정의되었는지 확인
+                if (window.HWP || typeof HWP !== 'undefined') {
+                    console.log('HWP 라이브러리가 성공적으로 로드되었습니다.');
+                    
+                    HWP.open(
+                        'test.hwp',
+                        container,
+                        {
+                            type: 'array-buffer'
+                        }
+                    )
+                    .then(function() {
+                        console.log('HWP 파일 로드 완료');
+                    })
+                    .catch(function(error) {
+                        console.error('HWP 파일 로드 실패:', error);
+                        container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
+                    });
+                } else {
+                    console.error('HWP 라이브러리가 로드되지 않았습니다.');
+                    container.innerText = 'HWP 라이브러리 로드에 실패했습니다.';
+                    
+                    // 디버깅 정보 출력
+                    console.log('window 객체에 존재하는 주요 속성:');
+                    for (let key in window) {
+                        if (key.includes('HWP') || key.includes('hwp')) {
+                            console.log(key);
+                        }
                     }
-                )
-                .then(function() {
-                    console.log('HWP 파일 로드 완료');
-                })
-                .catch(function(error) {
-                    console.error('HWP 파일 로드 실패:', error);
-                    container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
-                });
-            } else {
-                console.error('HWP 라이브러리가 로드되지 않았습니다.');
-                container.innerText = 'HWP 라이브러리 로드에 실패했습니다.';
-            }
-        };
+                }
+            }, 1000); // 1초 지연
+        });
     </script>
 </body>
 </html>

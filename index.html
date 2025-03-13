@@ -1,270 +1,480 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-    <title>한글 문서 뷰어</title>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>한글 문서 뷰어</title>
+    <!-- 필수 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.0.4/pako.min.js"></script>
     <script src="https://unpkg.com/cfb/dist/cfb.js"></script>
     <style>
+        /* 기본 스타일 */
         body {
             font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
-            margin: 20px;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
         }
-        .file-input {
+        
+        h1 {
+            text-align: center;
             margin-bottom: 20px;
+            color: #2c3e50;
         }
-        .tab-buttons {
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        
+        /* 파일 업로드 영역 */
+        .file-upload {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             margin-bottom: 20px;
+            padding: 20px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            transition: all 0.3s;
         }
-        .tab-button {
-            padding: 8px 16px;
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            cursor: pointer;
-            margin-right: 5px;
+        
+        .file-upload:hover {
+            border-color: #2980b9;
         }
-        .tab-button.active {
-            background: #007bff;
-            color: white;
-            border-color: #0056b3;
-        }
-        .tab-content {
+        
+        #file-input {
             display: none;
         }
+        
+        .upload-button {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .upload-button:hover {
+            background-color: #2980b9;
+        }
+        
+        /* 로딩 표시 */
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 뷰어 탭 */
+        .viewer-tabs {
+            display: flex;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab-button {
+            padding: 10px 20px;
+            background-color: #f5f5f5;
+            border: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .tab-button.active {
+            background-color: #3498db;
+            color: white;
+        }
+        
+        /* 뷰어 컨텐츠 */
+        .tab-content {
+            display: none;
+            min-height: 400px;
+        }
+        
         .tab-content.active {
             display: block;
         }
-        #hwp-container {
-            border: 1px solid #ddd;
-            padding: 20px;
-            min-height: 400px;
-            background: white;
-        }
+        
         #hwp-text {
             white-space: pre-wrap;
+            line-height: 1.5;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 4px;
             font-family: 'Malgun Gothic', sans-serif;
         }
-        .hwp-page {
-            margin-bottom: 20px;
-            padding: 20px;
+        
+        #hwp-document {
+            padding: 15px;
             border: 1px solid #eee;
-            background: white;
+            border-radius: 4px;
+            background-color: white;
+        }
+        
+        /* 에러 메시지 */
+        .error-message {
+            color: #e74c3c;
+            padding: 15px;
+            margin: 15px 0;
+            border: 1px solid #e74c3c;
+            border-radius: 4px;
+            background-color: #fadbd8;
+        }
+        
+        /* 페이지 스타일 */
+        .hwp-page {
+            margin-bottom: 30px;
+            padding: 40px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background-color: white;
+        }
+        
+        /* 문서 내부 스타일 */
+        .hwp-content {
+            position: relative;
+        }
+        
+        /* 표 스타일 */
+        .hwp-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        .hwp-table td, .hwp-table th {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        
+        /* 이미지 컨테이너 */
+        .image-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #eee;
         }
     </style>
 </head>
 <body>
-    <h1>한글 문서 뷰어</h1>
-    
-    <div class="file-input">
-        <input type="file" id="hwp-file" accept=".hwp" />
+    <div class="container">
+        <h1>한글(HWP) 문서 뷰어</h1>
+        
+        <div class="file-upload" id="drop-area">
+            <p>HWP 파일을 여기에 드래그하거나 아래 버튼을 클릭하세요</p>
+            <input type="file" id="file-input" accept=".hwp">
+            <button class="upload-button" id="upload-button">파일 선택</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <p>문서를 처리하는 중입니다...</p>
+        </div>
+        
+        <div id="viewer" style="display: none;">
+            <div class="viewer-tabs">
+                <button class="tab-button active" data-tab="formatted-view">서식 보기</button>
+                <button class="tab-button" data-tab="text-view">텍스트만 보기</button>
+            </div>
+            
+            <div id="formatted-view" class="tab-content active">
+                <div id="hwp-document"></div>
+            </div>
+            
+            <div id="text-view" class="tab-content">
+                <div id="hwp-text"></div>
+            </div>
+        </div>
     </div>
     
-    <div class="tab-buttons">
-        <button class="tab-button active" data-tab="formatted-tab">서식 포함</button>
-        <button class="tab-button" data-tab="text-tab">텍스트만</button>
-    </div>
-    
-    <div id="text-tab" class="tab-content">
-        <div id="hwp-text"></div>
-    </div>
-    
-    <div id="formatted-tab" class="tab-content active">
-        <div id="hwp-container"></div>
-    </div>
-
+    <!-- 기존 hwpjs 라이브러리 로드 -->
     <script src="hwpjs.js"></script>
+    
+    <!-- 향상된 뷰어 스크립트 -->
     <script>
-        // 탭 전환 기능
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                button.classList.add('active');
-                document.getElementById(button.dataset.tab).classList.add('active');
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM 요소 참조
+            const dropArea = document.getElementById('drop-area');
+            const fileInput = document.getElementById('file-input');
+            const uploadButton = document.getElementById('upload-button');
+            const loading = document.getElementById('loading');
+            const viewer = document.getElementById('viewer');
+            const hwpDocument = document.getElementById('hwp-document');
+            const hwpText = document.getElementById('hwp-text');
+            const tabButtons = document.querySelectorAll('.tab-button');
+            
+            // 파일 업로드 버튼 클릭 이벤트
+            uploadButton.addEventListener('click', function() {
+                fileInput.click();
             });
-        });
-        
-        // 안전하게 속성에 접근하는 헬퍼 함수
-        function safeGet(obj, path, defaultValue = null) {
-            if (!obj) return defaultValue;
             
-            const keys = path.split('.');
-            let current = obj;
-            
-            for (const key of keys) {
-                if (current === null || current === undefined) {
-                    return defaultValue;
+            // 파일 선택 이벤트
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
                 }
-                current = current[key];
+            });
+            
+            // 드래그 앤 드롭 이벤트
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
             
-            return current === undefined ? defaultValue : current;
-        }
-        
-        // 원본 hwpjs 객체를 수정하여 안전한 버전 생성
-        function patchHwpjs(hwpjsObj) {
-            // ObjectHwp 함수 안전하게 패치
-            const originalObjectHwp = hwpjsObj.ObjectHwp;
-            hwpjsObj.ObjectHwp = function() {
-                try {
-                    // 원래의 함수 호출
-                    const result = originalObjectHwp.call(hwpjsObj);
-                    return result;
-                } catch (error) {
-                    console.warn("ObjectHwp 에러 처리:", error);
-                    
-                    // 빈 결과 반환하는 대신 텍스트만 포함된 단순한 객체 배열 반환
-                    const fallbackResult = [];
-                    const sections = hwpjsObj.hwp.BodyText.data || [];
-                    
-                    for (const section of sections) {
-                        if (!section.data) continue;
-                        
-                        const paragraphs = Object.values(section.data).filter(item => 
-                            item.name === "HWPTAG_PARA_TEXT"
-                        );
-                        
-                        for (const para of paragraphs) {
-                            fallbackResult.push({
-                                type: 'paragraph',
-                                paragraph: {
-                                    text: para.text || "",
-                                    start_line: 0
-                                }
-                            });
-                        }
-                    }
-                    
-                    return fallbackResult;
-                }
-            };
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
             
-            // hwpTable 함수 안전하게 패치
-            const originalHwpTable = hwpjsObj.hwpTable;
-            hwpjsObj.hwpTable = function(data) {
-                try {
-                    // table 객체 존재 확인
-                    if (!data || !data.table) {
-                        console.warn("테이블 데이터가 없습니다");
-                        return [document.createElement('div')];
-                    }
-                    
-                    return originalHwpTable.call(hwpjsObj, data);
-                } catch (error) {
-                    console.warn("hwpTable 에러 처리:", error);
-                    
-                    // 간단한 div 반환
-                    const div = document.createElement('div');
-                    div.textContent = "[테이블 렌더링 오류]";
-                    return [div];
-                }
-            };
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
             
-            return hwpjsObj;
-        }
-        
-        // 파일 로드 및 처리
-        document.getElementById('hwp-file').addEventListener('change', async function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            document.getElementById('hwp-container').innerHTML = '문서를 로드하는 중...';
-            document.getElementById('hwp-text').textContent = '';
-            
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                
-                // hwpjs 객체 생성 및 패치
-                const hwp = new hwpjs(arrayBuffer);
-                patchHwpjs(hwp);
-                
-                // 텍스트 추출
-                const extractedText = hwp.getText();
-                document.getElementById('hwp-text').textContent = extractedText;
-                
-                try {
-                    // 서식 있는 HTML로 변환
-                    const formattedHtml = hwp.getHtml();
-                    document.getElementById('hwp-container').innerHTML = formattedHtml;
-                    
-                    // 이미지가 있으면 추가
-                    const imageCount = hwp.hwp.ImageCnt || 0;
-                    if (imageCount > 0) {
-                        for (let i = 0; i < imageCount; i++) {
-                            try {
-                                const img = hwp.getBinImage(i);
-                                document.getElementById('hwp-container').appendChild(img);
-                            } catch (imgErr) {
-                                console.warn('이미지 처리 오류:', imgErr);
-                            }
-                        }
-                    }
-                    
-                    console.log('HWP 문서 로드 완료');
-                } catch (htmlError) {
-                    console.error('HTML 변환 오류:', htmlError);
-                    document.getElementById('hwp-container').innerHTML = 
-                        `<div style="color:red;padding:20px;">
-                            <h3>서식 렌더링에 문제가 발생했습니다.</h3>
-                            <p>텍스트 탭에서 내용을 확인하세요.</p>
-                        </div>`;
-                }
-                
-            } catch (error) {
-                console.error('파일 처리 오류:', error);
-                document.getElementById('hwp-container').innerHTML = 
-                    `<div style="color:red;padding:20px;">파일 처리 중 오류가 발생했습니다: ${error.message}</div>`;
-                document.getElementById('hwp-text').textContent = '파일 처리 중 오류가 발생했습니다.';
+            function highlight() {
+                dropArea.style.borderColor = '#3498db';
+                dropArea.style.backgroundColor = '#ebf5fb';
             }
-        });
-        
-        // 추가 패치: ObjectHwp 함수 내의 LIST_HEADER 처리 개선
-        function patchListHeaderProcessing() {
-            const originalScript = document.querySelector('script[src="hwpjs.js"]');
             
-            if (originalScript) {
-                // 원본 스크립트를 복제하고 수정된 버전 로드
-                const newScript = document.createElement('script');
-                
-                fetch(originalScript.src)
-                    .then(response => response.text())
-                    .then(scriptContent => {
-                        // ObjectHwp 함수 내의 LIST_HEADER 처리 수정
-                        scriptContent = scriptContent.replace(
-                            /if\(\$\.type === "tbl "\) \{\s*console\.log\('캡션체크', _\.caption\);\s*const cell = _\.cell_attribute;/g,
-                            'if($.type === "tbl ") {\n' +
-                            '  console.log(\'캡션체크\', _.caption);\n' +
-                            '  const cell = _.cell_attribute || {};\n' +
-                            '  if(!cell.address) cell.address = {row: 0, col: 0};\n' +
-                            '  if(!cell.span) cell.span = {row: 1, col: 1};\n' +
-                            '  if(!cell.cell) cell.cell = {width: 0, height: 0};'
-                        );
-                        
-                        // ObjectHwp 함수 내의 테이블 속성 접근 개선
-                        scriptContent = scriptContent.replace(
-                            /\$\.table\[cnt\.row\]\[cnt\.col\] = \{/g,
-                            'if(!$.table[cnt.row]) $.table[cnt.row] = [];\n' +
-                            '  if(!$.table[cnt.row][cnt.col]) $.table[cnt.row][cnt.col] = {};\n' +
-                            '  $.table[cnt.row][cnt.col] = {'
-                        );
-                        
-                        const blob = new Blob([scriptContent], {type: 'application/javascript'});
-                        newScript.src = URL.createObjectURL(blob);
-                        
-                        newScript.onload = () => {
-                            console.log('hwpjs 패치 적용 완료');
-                        };
-                        
-                        document.head.appendChild(newScript);
-                    })
-                    .catch(err => {
-                        console.error('스크립트 패치 실패:', err);
+            function unhighlight() {
+                dropArea.style.borderColor = '#ddd';
+                dropArea.style.backgroundColor = 'white';
+            }
+            
+            dropArea.addEventListener('drop', function(e) {
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.toLowerCase().endsWith('.hwp')) {
+                    handleFile(files[0]);
+                } else {
+                    showError('HWP 파일만 지원합니다.');
+                }
+            });
+            
+            // 탭 전환 이벤트
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // 모든 탭 버튼에서 active 클래스 제거
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    
+                    // 모든 탭 컨텐츠에서 active 클래스 제거
+                    document.querySelectorAll('.tab-content').forEach(content => {
+                        content.classList.remove('active');
                     });
+                    
+                    // 클릭된 버튼과 해당 컨텐츠에 active 클래스 추가
+                    this.classList.add('active');
+                    document.getElementById(this.dataset.tab).classList.add('active');
+                });
+            });
+            
+            // 파일 처리 함수
+            function handleFile(file) {
+                // UI 초기화
+                hwpDocument.innerHTML = '';
+                hwpText.textContent = '';
+                showLoading();
+                hideViewer();
+                
+                // 파일 읽기
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        // hwpjs 초기화 및 안전하게 처리
+                        const hwp = createSafeHwpViewer(e.target.result);
+                        processHwpDocument(hwp);
+                    } catch (error) {
+                        hideLoading();
+                        showError('파일 처리 중 오류가 발생했습니다: ' + error.message);
+                    }
+                };
+                
+                reader.onerror = function() {
+                    hideLoading();
+                    showError('파일을 읽는 중 오류가 발생했습니다.');
+                };
+                
+                reader.readAsArrayBuffer(file);
             }
-        }
-        
-        // 페이지 로드 시 패치 시도
-        window.addEventListener('load', patchListHeaderProcessing);
+            
+            // hwpjs 래퍼 생성 (안전한 호출 위한)
+            function createSafeHwpViewer(arrayBuffer) {
+                try {
+                    // hwpjs 객체 생성
+                    const hwp = new hwpjs(arrayBuffer);
+                    
+                    // 안전한 메서드 호출 래퍼 추가
+                    const originalGetHtml = hwp.getHtml.bind(hwp);
+                    hwp.getHtml = function() {
+                        try {
+                            // 기존 메서드 오류 처리
+                            return originalGetHtml();
+                        } catch (error) {
+                            console.warn('getHtml 메서드 오류:', error);
+                            
+                            // 기본 HTML 반환
+                            const text = hwp.getText();
+                            return `<div style="padding: 20px; font-family: 'Malgun Gothic', sans-serif;">
+                                     <p>${text.replace(/\n/g, '<br>')}</p>
+                                     </div>`;
+                        }
+                    };
+                    
+                    // ObjectHwp 메서드 오류 처리
+                    const originalObjectHwp = hwp.ObjectHwp.bind(hwp);
+                    hwp.ObjectHwp = function() {
+                        try {
+                            return originalObjectHwp();
+                        } catch (error) {
+                            console.warn('ObjectHwp 메서드 오류:', error);
+                            return [];
+                        }
+                    };
+                    
+                    return hwp;
+                } catch (error) {
+                    console.error('hwpjs 객체 생성 오류:', error);
+                    throw error;
+                }
+            }
+            
+            // hwp 문서 처리
+            function processHwpDocument(hwp) {
+                try {
+                    // 텍스트 추출
+                    const text = hwp.getText();
+                    hwpText.textContent = text;
+                    
+                    // 서식 있는 문서 생성 시도
+                    try {
+                        const html = hwp.getHtml();
+                        hwpDocument.innerHTML = html;
+                        
+                        // 스타일 보정
+                        fixDocumentStyles();
+                    } catch (htmlError) {
+                        console.error('HTML 변환 오류:', htmlError);
+                        hwpDocument.innerHTML = `<div class="error-message">
+                                                <h3>서식 렌더링에 문제가 발생했습니다.</h3>
+                                                <p>텍스트만 보기 탭에서 내용을 확인하세요.</p>
+                                                </div>
+                                                <div>${text.replace(/\n/g, '<br>')}</div>`;
+                    }
+                    
+                    // 이미지 추출 시도
+                    try {
+                        const imageCount = hwp.hwp.ImageCnt || 0;
+                        if (imageCount > 0) {
+                            const imageContainer = document.createElement('div');
+                            imageContainer.className = 'image-container';
+                            
+                            for (let i = 0; i < imageCount; i++) {
+                                try {
+                                    const img = hwp.getBinImage(i);
+                                    imageContainer.appendChild(img);
+                                } catch (imgErr) {
+                                    console.warn('이미지 추출 오류:', imgErr);
+                                }
+                            }
+                            
+                            hwpDocument.appendChild(imageContainer);
+                        }
+                    } catch (imgCountErr) {
+                        console.warn('이미지 정보 확인 오류:', imgCountErr);
+                    }
+                    
+                    hideLoading();
+                    showViewer();
+                } catch (error) {
+                    hideLoading();
+                    showError('문서 처리 중 오류가 발생했습니다: ' + error.message);
+                }
+            }
+            
+            // 문서 스타일 보정 함수
+            function fixDocumentStyles() {
+                // 페이지 배경색 적용
+                const pages = document.querySelectorAll('.hwp-page');
+                pages.forEach(page => {
+                    page.style.backgroundColor = 'white';
+                });
+                
+                // 테이블 스타일 보정
+                const tables = document.querySelectorAll('table');
+                tables.forEach(table => {
+                    table.classList.add('hwp-table');
+                    
+                    // 빈 셀 처리
+                    const cells = table.querySelectorAll('td');
+                    cells.forEach(cell => {
+                        if (!cell.textContent.trim()) {
+                            cell.innerHTML = '&nbsp;';
+                        }
+                    });
+                });
+            }
+            
+            // 오류 메시지 표시
+            function showError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = message;
+                
+                hwpDocument.innerHTML = '';
+                hwpDocument.appendChild(errorDiv);
+                
+                showViewer();
+            }
+            
+            // UI 상태 관리 함수
+            function showLoading() {
+                loading.style.display = 'block';
+            }
+            
+            function hideLoading() {
+                loading.style.display = 'none';
+            }
+            
+            function showViewer() {
+                viewer.style.display = 'block';
+            }
+            
+            function hideViewer() {
+                viewer.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

@@ -1,3 +1,6 @@
+*   `HWP.open()` 함수를 사용하는 부분은 이전과 동일하게 유지해도 됩니다.  `@hwpjs/hwp.js`는 기존 `hwp.js`와 호환되도록 설계되었기 때문입니다.
+
+```html
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,12 +10,12 @@
 <body>
     <div id="hwp-container"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hwp.js@latest/dist/hwp.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@hwpjs/hwp.js@latest/dist/hwp.js"></script>
     <script>
         const container = document.getElementById('hwp-container');
 
         HWP.open(
-            'test.hwp', // test.hwp로 변경
+            'test.hwp', // test.hwp 파일 이름 확인
             container,
             {
                 type: 'array-buffer'
@@ -28,3 +31,5 @@
     </script>
 </body>
 </html>
+```
+*    `test.hwp`파일이 `index.html`과 같은 폴더에 있는지 확인해주세요.

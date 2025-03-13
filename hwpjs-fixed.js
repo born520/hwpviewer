@@ -1,1126 +1,212 @@
-// hwpjs-fixed.js - 기본 hwpjs.js를 수정한 버전
 'use strict';
 (function (root, factory) {
   if (typeof define === 'function' && define.amd) {
     define(["CFB"], factory);
   } else if (typeof module === 'object' && module.exports) {
     module.exports = factory(require("CFB"));
-    module.exports = factory();
   } else {
     root.hwpjs = factory();
   }
 }(this, function() {
-  // 원래 함수들은 그대로 유지하고 문제가 있는 부분만 수정
-  
-  // 유틸리티 함수들
+  // 기본 유틸리티 함수
   function buf2hex(buffer) {
     return [...new Uint8Array(buffer)].map(x => x.toString(16).padStart(2, '0')).join(' ').toUpperCase();
   }
   
-  function strEncodeUTF16(str) {
-    var buf = new ArrayBuffer(str.length * 2);
-    var bufView = new Uint16Array(buf);
-    for (var i = 0, strLen = str.length; i < strLen; i++) {
-        bufView[i] = str.charCodeAt(i);
-    }
-    return new Uint8Array(buf);
-  }
-  
-  // 안전한 객체 접근을 위한 유틸리티 함수 추가
-  function safeGet(obj, path, defaultValue = undefined) {
-    if (!obj) return defaultValue;
-    
-    const keys = path.split('.');
-    let result = obj;
-    
-    for (const key of keys) {
-      if (result === null || result === undefined) {
-        return defaultValue;
-      }
-      result = result[key];
-    }
-    
-    return result === undefined ? defaultValue : result;
-  }
-  
-  const Cursor = (function (start) {
-    function Cursor (start) {
-      this.pos = start ? start : 0
-    }
-    Cursor.prototype = {};
-    Cursor.prototype.move = function(num) {
-      return this.pos += num;
-    }
-    Cursor.prototype.set = function(num) {
-      return this.pos = num;
-    }
-    return Cursor;
-  })();
-  
-  const hwpjs = (function () {
-    function hwpjs(blob) {
+  // 간단한 hwpjs 구현
+  function hwpjs(blob) {
+    try {
       this.cfb = CFB.read(new Uint8Array(blob), {type:"buffer"});
       this.hwp = {
-        FileHeader : {},
-        DocInfo : {},
-        BodyText : {},
-        BinData : {},
-        PrvText : {},
-        PrvImage : {},
-        DocOptions : {},
-        Scripts : {},
-        XMLTemplate : {},
-        DocHistory : {},
-        Text : '',
-        ImageCnt: 0,
-        Page:0,
-      }
-      this.hwp = this.Init();
-      this.createStyle();
+        FileHeader: {},
+        DocInfo: {},
+        BodyText: {},
+        BinData: {},
+        Text: '',
+        ImageCnt: 0
+      };
+      
+      // 파일 구조 파싱
+      this.parseFileStructure();
+      
+      // 텍스트 추출
+      this.extractText();
+    } catch (error) {
+      console.error("hwpjs 초기화 오류:", error);
     }
-    
-    // hwpjs 프로토타입 메소드들
-    hwpjs.prototype = {};
-    
-    // 초기화 및 기본 메소드들은 그대로 유지
-    hwpjs.prototype.Init = function() {
-      // 기존 코드를 그대로 유지
-      // ...
-      
-      // 필요한 수정사항만 추가
-      this.hwp.Definition = [];
-      
-      // 나머지 코드는 그대로
-      // ...
-      
-      return this.hwp;
-    };
-    
-    // ObjectHwp 함수 수정 - 안전한 처리 추가
-    hwpjs.prototype.ObjectHwp = function() {
+  }
+  
+  // 프로토타입 메소드
+  hwpjs.prototype = {
+    // 파일 구조 파싱
+    parseFileStructure: function() {
       try {
-        const result = [];
-        const { HWPTAG_PARA_HEADER, HWPTAG_PARA_TEXT, HWPTAG_PARA_CHAR_SHAPE, HWPTAG_PARA_LINE_SEG, HWPTAG_PARA_RANGE_TAG, HWPTAG_CTRL_HEADER, HWPTAG_LIST_HEADER, HWPTAG_PAGE_DEF, HWPTAG_FOOTNOTE_SHAPE, HWPTAG_PAGE_BORDER_FILL, HWPTAG_SHAPE_COMPONENT, HWPTAG_TABLE, HWPTAG_SHAPE_COMPONENT_LINE, HWPTAG_SHAPE_COMPONENT_RECTANGLE, HWPTAG_SHAPE_COMPONENT_ELLIPSE, HWPTAG_SHAPE_COMPONENT_ARC, HWPTAG_SHAPE_COMPONENT_POLYGON, HWPTAG_SHAPE_COMPONENT_CURVE, HWPTAG_SHAPE_COMPONENT_OLE, HWPTAG_SHAPE_COMPONENT_PICTURE, HWPTAG_SHAPE_COMPONENT_CONTAINER, HWPTAG_CTRL_DATA, HWPTAG_EQEDIT, RESERVED, HWPTAG_SHAPE_COMPONENT_TEXTART, HWPTAG_FORM_OBJECT, HWPTAG_MEMO_SHAPE, HWPTAG_MEMO_LIST, HWPTAG_CHART_DATA, HWPTAG_VIDEO_DATA, HWPTAG_SHAPE_COMPONENT_UNKNOWN} = this.hwp.DATA_RECORD.SECTION_TAG_ID;
+        // 필수 파일 인덱스 찾기
+        this.hwp.FileHeader = this.cfb.FileIndex.find(FileIndex => FileIndex.name === "FileHeader");
+        this.hwp.DocInfo = this.cfb.FileIndex.find(FileIndex => FileIndex.name === "DocInfo");
+        this.hwp.BodyText = this.cfb.FileIndex.find(FileIndex => FileIndex.name === "BodyText");
+        this.hwp.BinData = this.cfb.FileIndex.find(FileIndex => FileIndex.name === "BinData");
         
-        // 섹션 데이터가 없는 경우 빈 배열 반환
-        if (!this.hwp.BodyText.data || !Array.isArray(this.hwp.BodyText.data)) {
-          return result;
-        }
-        
-        this.hwp.BodyText.data.forEach(section => {
-          if (!section.data) return;
-          
-          let data = section.data;
-          let tag_id = 0;
-          const cnt = {
-            cell : 0,
-            paragraph : 0,
-            row : 0,
-            col : 0,
-            tpi : 0, // table paragraph idx
-            parashape : 0,
-          }
-          
-          let $ = {
-            type : 'paragraph',
-            paragraph : {
-              text : '', 
-              shape : {},
-              image_src : '',
-              image_height : '',
-              image_width : '',
-              height: 0,
-              classList : [],
-              start_line : undefined,
-            }
+        // 파일 헤더 정보 파싱
+        if (this.hwp.FileHeader && this.hwp.FileHeader.content) {
+          this.hwp.FileHeader.data = {
+            signature: this.textDecoder(this.hwp.FileHeader.content.slice(0, 32)),
+            version: this.hwp.FileHeader.content.slice(32, 36)
           };
-          
-          const textOpt = {
-            align : 'left',
-            line_height : 0,
-            indent : 0,
-          }
-          
-          const extend = [];
-          const header_class = {
-            ParaShape : '',
-            Bullet : '',
-            Style : '',
-          }
-          
-          Object.values(data).forEach((_, i) => {
-            // 기존 로직 유지하면서 안전한 접근 처리 추가
-            tag_id = _.tag_id;
-            
-            // 각 태그 타입 처리
-            switch (_.tag_id) {
-              case HWPTAG_CTRL_HEADER:
-                break;
-              case HWPTAG_PARA_HEADER:
-                if($.type === "tbl " && cnt.paragraph === 0 && $.rows && $.cols) {
-                  result.push($);
-                  $ = {
-                    type : 'paragraph',
-                    paragraph : {},
-                  };
-                } else if($.type === "$rec" && cnt.paragraph === 0) {
-                  result.push($);
-                  $ = {
-                    type : 'paragraph',
-                    paragraph : {},
-                  };
-                } else if(cnt.paragraph === 0 && $.type === "paragraph") {
-                  result.push($);
-                  $ = {
-                    type : 'paragraph',
-                    paragraph : {},
-                  };
-                } else if(cnt.paragraph === 0 && $.type === "header/footer") {
-                  result.push($);
-                  $ = {
-                    type : 'paragraph',
-                    paragraph : {},
-                  };
-                }
-                break;
-              default:
-                break;
-            }
-            
-            // 각 태그에 대한 세부 처리
-            switch (_.tag_id) {
-              case HWPTAG_LIST_HEADER:
-                // 테이블 처리 - 안전하게 cell_attribute 접근
-                if($.type === "tbl ") {
-                  // 안전하게 caption 확인
-                  if (_.caption) {
-                    $.caption = _.caption;
-                  }
-                  
-                  // 안전하게 cell_attribute 객체 접근
-                  const cell = safeGet(_, 'cell_attribute', {});
-                  
-                  // cell_attribute 속성이 없으면 기본값 생성
-                  if (!cell.address) cell.address = { row: 0, col: 0 };
-                  if (!cell.span) cell.span = { row: 1, col: 1 };
-                  if (!cell.cell) cell.cell = { width: 0, height: 0 };
-                  if (!cell.margin) cell.margin = { top: 0, right: 0, bottom: 0, left: 0 };
-                  
-                  if($.rows && $.cols) {
-                    cnt.row = cell.address.row;
-                    cnt.col = cell.address.col;
-                    
-                    // 테이블 배열 존재 확인 및 생성
-                    if (!$.table[cnt.row]) {
-                      $.table[cnt.row] = [];
-                    }
-                    
-                    if (!$.table[cnt.row][cnt.col]) {
-                      $.table[cnt.row][cnt.col] = {};
-                    }
-                    
-                    $.table[cnt.row][cnt.col] = {
-                      ...$.table[cnt.row][cnt.col],
-                      cell : {
-                        width : cell.cell.width.hwpInch(),
-                        height : cell.cell.height.hwpInch(),
-                      },
-                      margin : cell.margin,
-                      rowspan : cell.span.row,
-                      colspan : cell.span.col,
-                    }
-                    
-                    if (!$.table[cnt.row][cnt.col].classList) {
-                      $.table[cnt.row][cnt.col].classList = [];
-                    }
-                    
-                    $.table[cnt.row][cnt.col].classList.push(`hwp-BorderFill-${cell.borderfill_id - 1}`);
-                    
-                    if (_.paragraph_count) {
-                      $.table[cnt.row][cnt.col].paragraph = new Array(_.paragraph_count);
-                      cnt.paragraph = _.paragraph_count;
-                    }
-                  }
-                } else if($.type === "$rec") {
-                  cnt.paragraph = _.paragraph_count;
-                  $.textbox = {};
-                  $.textbox.paragraph = new Array(_.paragraph_count).fill(true);
-                }
-                break;
-              
-              // 나머지 태그 처리는 기존과 동일하게 유지
-              // ...
-              
-              case HWPTAG_TABLE:
-                const ctrl_header = data[i-1];
-                const line_seg = data[i-2];
-                
-                if(line_seg && line_seg.tag_id === HWPTAG_PARA_LINE_SEG) {
-                  $.start_line = line_seg.seg[0].start_line;
-                }
-                
-                if(ctrl_header && ctrl_header.tag_id === HWPTAG_CTRL_HEADER) {
-                  if(ctrl_header.object && ctrl_header.object.width) $.width = ctrl_header.object.width.hwpInch();
-                  if(ctrl_header.object && ctrl_header.object.height) $.height = ctrl_header.object.height.hwpInch();
-                }
-                
-                cnt.paragraph = 0;
-                cnt.tpi = 0;
-                $.type = "tbl ";
-                
-                // 안전하게 span 처리
-                const span = safeGet(_, 'span', []);
-                cnt.cell = span.reduce((pre, cur) => pre + cur, 0);
-                
-                $.rows = _.rows || 0;
-                $.cols = _.cols || 0;
-                $.padding = _.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-                $.cell_spacing = _.cell_spacing || 0;
-                $.span = span;
-                
-                // 테이블 배열 초기화
-                const table = new Array(_.rows || 0).fill(null);
-                table.forEach((_, i) => {
-                  table[i] = new Array(_.cols || 0).fill(null);
-                });
-                
-                $.table = table;
-                break;
-                
-              // 기타 태그 처리
-              // ...
-            }
-          });
-          
-          if($) result.push($);
-        });
+        }
         
-        return result;
+        // BinData 폴더 찾기 (이미지용)
+        const binDataFolders = this.cfb.FullPaths.filter(path => path.includes('BinData/'));
+        this.hwp.ImageCnt = binDataFolders.length;
       } catch (error) {
-        console.error("ObjectHwp 함수 오류:", error);
-        
-        // 오류 발생 시 빈 배열 반환
-        return [];
+        console.error("파일 구조 파싱 오류:", error);
       }
-    };
+    },
     
-    // hwpTable 함수 수정 - 안전하게 처리
-    hwpjs.prototype.hwpTable = function (data) {
+    // 텍스트 추출
+    extractText: function() {
       try {
-        const result = [];
-        
-        // data 객체가 없거나 필수 속성이 없으면 빈 div 반환
-        if (!data || !data.table) {
-          const div = document.createElement('div');
-          div.textContent = "[테이블 데이터 없음]";
-          return [div];
-        }
-        
-        const { table, padding, cols, rows, cell_spacing, width, height, start_line, paragraph_margin, caption } = data;
-        
-        const container = document.createElement('div');
-        container.style.position = "absolute";
-        if (start_line) container.style.top = start_line.hwpInch();
-        
-        const t = document.createElement('table');
-        t.className = "hwp-table";
-        t.style.fontSize = "initial";
-        t.dataset.start_line = start_line;
-        t.style.boxSizing = "content-box";
-        
-        if (padding) {
-          t.style.paddingTop = padding.top.hwpInch();
-          t.style.paddingRight = padding.right.hwpInch();
-          t.style.paddingBottom = padding.bottom.hwpInch();
-          t.style.paddingLeft = padding.left.hwpInch();
-        }
-        
-        // 테이블 행과 셀 생성
-        if (Array.isArray(table)) {
-          table.forEach((row, rowIndex) => {
-            if (!row || !Array.isArray(row)) return;
+        // BodyText에서 텍스트 추출
+        if (this.hwp.BodyText && this.hwp.BodyText.content) {
+          try {
+            // 압축 해제 시도
+            const content = pako.inflate(this.uint_8(this.hwp.BodyText.content), { windowBits: -15 });
             
-            const tr = t.insertRow();
+            // 텍스트 추출 (매우 단순화된 버전)
+            let text = '';
+            for (let i = 0; i < content.length; i += 2) {
+              const charCode = content[i] | (content[i + 1] << 8);
+              
+              // 일반 텍스트 문자인 경우만 추출
+              if (charCode >= 32 && charCode <= 126 || charCode >= 0xAC00 && charCode <= 0xD7A3) {
+                text += String.fromCharCode(charCode);
+              } else if (charCode === 10 || charCode === 13) {
+                text += '\n';
+              }
+            }
             
-            row.forEach((col, colIndex) => {
-              if (!col) return;
-              
-              const { colspan = 1, rowspan = 1, cell = {}, margin = {}, align = 'left', classList = [] } = col;
-              
-              const td = tr.insertCell();
-              td.style.textAlign = align;
-              
-              if (cell.width) td.style.width = cell.width;
-              if (cell.height) td.style.height = cell.height;
-              
-              td.rowSpan = rowspan;
-              td.colSpan = colspan;
-              
-              // 안전하게 paragraph 접근
-              if (col.paragraph && Array.isArray(col.paragraph)) {
-                col.paragraph.forEach(paragraph => {
-                  if (!paragraph) return;
-                  
-                  try {
-                    const p = this.hwpTextCss(paragraph, false);
-                    if (p && p.length > 0) {
-                      td.appendChild(p[0]);
-                    }
-                  } catch (error) {
-                    console.warn("Paragraph 렌더링 오류:", error);
-                  }
-                });
+            this.hwp.Text = text;
+          } catch (inflateError) {
+            console.warn("압축 해제 오류:", inflateError);
+            
+            // 압축 해제 실패 시 직접 텍스트 추출 시도
+            const content = this.hwp.BodyText.content;
+            let text = '';
+            
+            for (let i = 0; i < content.length; i++) {
+              const b = content[i];
+              if (b >= 32 && b <= 126) {
+                text += String.fromCharCode(b);
               }
-              
-              // 여백 적용
-              if (margin.top) td.style.marginTop = margin.top.hwpInch();
-              if (margin.right) td.style.marginRight = margin.right.hwpInch();
-              if (margin.bottom) td.style.marginBottom = margin.bottom.hwpInch();
-              if (margin.left) td.style.marginLeft = margin.left.hwpInch();
-              
-              // 클래스 적용
-              if (Array.isArray(classList)) {
-                classList.forEach(cls => {
-                  if (cls) td.classList.add(cls);
-                });
-              }
-            });
-          });
+            }
+            
+            this.hwp.Text = text;
+          }
         }
         
-        container.appendChild(t);
-        return [container];
+        // DocInfo에서 부가 정보 추출
+        if (this.hwp.DocInfo && this.hwp.DocInfo.content) {
+          try {
+            const content = pako.inflate(this.uint_8(this.hwp.DocInfo.content), { windowBits: -15 });
+            
+            // 여기서 추가 정보 추출 가능 (단순화를 위해 생략)
+          } catch (error) {
+            console.warn("DocInfo 파싱 오류:", error);
+          }
+        }
       } catch (error) {
-        console.error("hwpTable 함수 오류:", error);
-        
-        // 오류 발생 시 기본 div 반환
-        const div = document.createElement('div');
-        div.textContent = "[테이블 렌더링 오류]";
-        return [div];
+        console.error("텍스트 추출 오류:", error);
+        this.hwp.Text = '텍스트 추출 실패';
       }
-    };
+    },
     
-    // 기존 메소드들은 그대로 유지
-    // ...
+    // 텍스트 디코딩 함수
+    textDecoder: function(uint_8, type = 'utf8') {
+      try {
+        const decoder = new TextDecoder(type);
+        return decoder.decode(new Uint8Array(uint_8));
+      } catch (error) {
+        console.warn("텍스트 디코딩 오류:", error);
+        return '';
+      }
+    },
     
-    return hwpjs;
-  })();
-  
-  // 프로토타입 확장
-  Number.prototype.hwpPt = function(num) {
-    if(num == true) return parseFloat(this / 100)
-    else return `${this / 100}pt`;
-  }
-  
-  Number.prototype.hwpInch = function(num) {
-    if(num == true) return parseFloat(this / 7200)
-    else return `${this / 7200}in`;
-  }
-  
-  Number.prototype.borderWidth = function () {
-    let result = 0;
-    switch (this) {
-      case 0: result = 0.1; break;
-      case 1: result = 0.12; break;
-      case 2: result = 0.15; break;
-      case 3: result = 0.2; break;
-      case 4: result = 0.25; break;
-      case 5: result = 0.3; break;
-      case 6: result = 0.4; break;
-      case 7: result = 0.5; break;
-      case 8: result = 0.6; break;
-      case 9: result = 0.7; break;
-      case 10: result = 1.0; break;
-      case 11: result = 1.5; break;
-      case 12: result = 2.0; break;
-      case 13: result = 3.0; break;
-      case 14: result = 4.0; break;
-      case 15: result = 5.0; break;
+    // Uint8Array 변환 함수
+    uint_8: function(data) {
+      return new Uint8Array(data);
+    },
+    
+    // 텍스트 반환 함수
+    getText: function() {
+      return this.hwp.Text || '텍스트 없음';
+    },
+    
+    // HTML 렌더링 함수 (매우 단순화)
+    getHtml: function() {
+      const text = this.getText();
+      
+      return `
+        <div class="hwp-document">
+          <div class="hwp-page">
+            <div class="hwp-content">
+              <p>${text.replace(/\n/g, '</p><p>')}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    },
+    
+    // 이미지 추출 함수
+    getBinImage: function(index) {
+      try {
+        // BinData 폴더의 이미지 파일 찾기
+        const binDataPaths = this.cfb.FullPaths.filter(path => 
+          path.includes('BinData/') && 
+          (path.toLowerCase().endsWith('.jpg') || 
+           path.toLowerCase().endsWith('.png') || 
+           path.toLowerCase().endsWith('.bmp') || 
+           path.toLowerCase().endsWith('.gif'))
+        );
+        
+        if (index < 0 || index >= binDataPaths.length) {
+          console.warn("존재하지 않는 이미지 인덱스:", index);
+          return null;
+        }
+        
+        const path = binDataPaths[index];
+        const fileIdx = this.cfb.FileIndex.findIndex(file => file.name === path);
+        
+        if (fileIdx === -1) {
+          console.warn("이미지 파일을 찾을 수 없습니다:", path);
+          return null;
+        }
+        
+        const imgFile = this.cfb.FileIndex[fileIdx];
+        
+        // 확장자 추출
+        const extMatch = path.match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'png';
+        
+        // 압축 해제 시도
+        let imgData;
+        try {
+          imgData = pako.inflate(this.uint_8(imgFile.content), { windowBits: -15 });
+        } catch (error) {
+          console.warn("이미지 압축 해제 오류, 원본 사용:", error);
+          imgData = imgFile.content;
+        }
+        
+        // 이미지 생성
+        const img = new Image();
+        img.src = URL.createObjectURL(new Blob([new Uint8Array(imgData)], { type: `image/${ext}` }));
+        
+        return img;
+      } catch (error) {
+        console.error("이미지 추출 오류:", error);
+        return null;
+      }
     }
-    return result;
-  }
-  
-  Number.prototype.BorderStyle = function() {
-    switch (this) {
-      case 0: break;
-      case 1: return "solid"; break;
-      case 2: return "dashed"; break;
-      case 3: return "dotted"; break;
-      case 4: return "solid"; break;
-      case 5: return "dashed"; break;
-      case 6: return "dotted"; break;
-      case 7: return "double"; break;
-      case 8: return "double"; break;
-      case 9: return "double"; break;
-      case 10: return "double"; break;
-      case 11: return "solid"; break;
-      case 12: return "double"; break;
-      case 13: return "solid"; break;
-      case 14: return "solid"; break;
-      case 15: return "solid"; break;
-      case 16: return "solid"; break;
-      default: return ""; break;
-    }
-  }
-  
-  Array.prototype.hwpRGB = function() {
-    return `rgb(${this.join(',')})`;
-  }
+  };
   
   return hwpjs;
 }));
-// hwpjs 프로토타입에 createStyle 함수 추가
-hwpjs.prototype.createStyle = function () {
-  try {
-    const head = document.head || document.getElementsByTagName('head')[0];
-    head.appendChild(document.createElement('style'));
-    const style = document.styleSheets[document.styleSheets.length - 1];
-    
-    // FaceName 스타일 생성
-    if (this.hwp.FaceName && typeof this.hwp.FaceName === 'object') {
-      Object.values(this.hwp.FaceName).forEach((FaceName, i) => {
-        if (!FaceName) return;
-        
-        const { font, font_type_info } = FaceName;
-        if (!font || !font_type_info) return;
-        
-        const id = i;
-        const selector = `.hwp-FaceName-${id}`;
-        const css = [];
-        
-        try {
-          css.push(`font-family:${font.name}, ${font_type_info.serif ? "sans-serif" : "serif"}`);
-          if(font_type_info.bold) {
-            css.push(`font-weight:800`);
-          }
-        } catch (e) {
-          console.warn('Font style 생성 오류:', e);
-        }
-        
-        try {
-          style.insertRule(`${selector}{${css.join(";")}}`, 0);
-        } catch (e) {
-          console.warn('Style rule 추가 오류:', e);
-        }
-      });
-    }
-    
-    // CharShape 스타일 생성
-    if (this.hwp.CharShape && typeof this.hwp.CharShape === 'object') {
-      Object.values(this.hwp.CharShape).forEach((CharShape, i) => {
-        if (!CharShape) return;
-        
-        const id = i;
-        const selector = `.hwp-CharShape-${id}`;
-        const { standard_size, letter_spacing, font_stretch, font_attribute, color, font_id } = CharShape;
-        
-        // 기본 스타일 속성 설정
-        const css = [];
-        
-        if (standard_size) css.push(`font-size:${standard_size.hwpPt()}`);
-        if (color && color.font) css.push(`color:${color.font.hwpRGB()}`);
-        if (color && color.underline) css.push(`text-decoration-color:${color.underline.hwpRGB()}`);
-        
-        if(font_attribute) {
-          if(font_attribute.underline_color) {
-            css.push(`text-decoration-color:${font_attribute.underline_color.hwpRGB()}`);
-          }
-          if(font_attribute.underline) {
-            css.push(`text-decoration:${font_attribute.underline} ${font_attribute.strikethrough ? 'line-through' : ''}`);
-          }
-          if(font_attribute.underline_shape) {
-            css.push(`text-decoration-style:${font_attribute.underline_shape}`);
-          }
-          if(font_attribute.italic){
-            css.push(`font-style:italic`);
-          }
-          if(font_attribute.bold){
-            css.push(`font-weight:800`);
-          }
-        }
-        
-        if(letter_spacing){
-          css.push(`letter-spacing:${letter_spacing.ko/100}em`);
-        }
-        
-        try {
-          style.insertRule(`${selector}{${css.join(";")}}`, 0);
-          
-          // 언어별 폰트 스타일 적용
-          if (font_id) {
-            for (const [name, Idx] of Object.entries(font_id)) {
-              if (this.hwp.FaceName[Idx]) {
-                const { font, font_type_info } = this.hwp.FaceName[Idx];
-                const selector = `.hwp-CharShape-${id}.lang-${name}`;
-                const css = [];
-                
-                try {
-                  if (font && font.name) {
-                    if (font_type_info && typeof font_type_info.serif !== 'undefined') {
-                      css.push(`font-family:"${font.name}", ${font_type_info.serif ? "sans-serif" : "serif"}`);
-                    } else {
-                      css.push(`font-family:"${font.name}"`);
-                    }
-                  }
-                } catch(e) {
-                  console.warn('Language font style 생성 오류:', e);
-                }
-                
-                if(font_stretch && font_stretch[name]) {
-                  css.push(`font-stretch:${font_stretch[name]}%`);
-                }
-                
-                if(letter_spacing && letter_spacing[name]) {
-                  css.push(`letter-spacing:${letter_spacing[name]/100}em`);
-                }
-                
-                try {
-                  style.insertRule(`${selector}{${css.join(";")}}`, 0);
-                } catch (e) {
-                  console.warn('Language style rule 추가 오류:', e);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('CharShape style rule 추가 오류:', e);
-        }
-      });
-    }
-    
-    // BorderFill 스타일 생성
-    if (this.hwp.BorderFill && typeof this.hwp.BorderFill === 'object') {
-      Object.values(this.hwp.BorderFill).forEach((BorderFill, i) => {
-        if (!BorderFill) return;
-        
-        const id = i;
-        const selector = `.hwp-BorderFill-${id}`;
-        const { border, fill } = BorderFill;
-        const css = [];
-        
-        if (border) {
-          if (border.line) {
-            if (border.line.top) css.push(`border-top-style:${border.line.top.BorderStyle()}`);
-            if (border.line.right) css.push(`border-right-style:${border.line.right.BorderStyle()}`);
-            if (border.line.bottom) css.push(`border-bottom-style:${border.line.bottom.BorderStyle()}`);
-            if (border.line.left) css.push(`border-left-style:${border.line.left.BorderStyle()}`);
-          }
-          
-          if (border.width) {
-            if (border.width.top) {
-              const bStyle = border.line && border.line.top ? border.line.top.BorderStyle() : '';
-              css.push(`border-top-width:${bStyle === "double" ? border.width.top.borderWidth() * 2 : border.width.top.borderWidth()}mm`);
-            }
-            if (border.width.right) {
-              const bStyle = border.line && border.line.right ? border.line.right.BorderStyle() : '';
-              css.push(`border-right-width:${bStyle === "double" ? border.width.right.borderWidth() * 2 : border.width.right.borderWidth()}mm`);
-            }
-            if (border.width.bottom) {
-              const bStyle = border.line && border.line.bottom ? border.line.bottom.BorderStyle() : '';
-              css.push(`border-bottom-width:${bStyle === "double" ? border.width.bottom.borderWidth() * 2 : border.width.bottom.borderWidth()}mm`);
-            }
-            if (border.width.left) {
-              const bStyle = border.line && border.line.left ? border.line.left.BorderStyle() : '';
-              css.push(`border-left-width:${bStyle === "double" ? border.width.left.borderWidth() * 2 : border.width.left.borderWidth()}mm`);
-            }
-          }
-          
-          if (border.color) {
-            if (border.color.top) css.push(`border-top-color:${border.color.top.hwpRGB()}`);
-            if (border.color.right) css.push(`border-right-color:${border.color.right.hwpRGB()}`);
-            if (border.color.bottom) css.push(`border-bottom-color:${border.color.bottom.hwpRGB()}`);
-            if (border.color.left) css.push(`border-left-color:${border.color.left.hwpRGB()}`);
-          }
-        }
-        
-        if (fill && fill.background_color) {
-          css.push(`background-color:${fill.background_color.hwpRGB()}`);
-        }
-        
-        try {
-          style.insertRule(`${selector}{${css.join(";")}}`, 0);
-        } catch (e) {
-          console.warn('BorderFill style rule 추가 오류:', e);
-        }
-      });
-    }
-    
-    // ParaShape 스타일 생성
-    if (this.hwp.ParaShape && typeof this.hwp.ParaShape === 'object') {
-      Object.values(this.hwp.ParaShape).forEach((ParaShape, i) => {
-        if (!ParaShape) return;
-        
-        const { align, margin, line_spacing_type, vertical_align } = ParaShape;
-        const { line_spacing, paragraph_spacing, indent, left, right } = margin || {};
-        
-        const id = i;
-        const selector = `.hwp-ParaShape-${id}`;
-        const css = [];
-        
-        if (align) css.push(`text-align:${align}`);
-        
-        if (line_spacing && line_spacing_type === "%") {
-          css.push(`line-height:${line_spacing/100}em`);
-        }
-        
-        if (paragraph_spacing) {
-          if (paragraph_spacing.top) css.push(`margin-top:${paragraph_spacing.top.hwpPt(true) / 2}pt`);
-          if (paragraph_spacing.bottom) css.push(`margin-bottom:${paragraph_spacing.bottom.hwpPt(true) / 2}pt`);
-        }
-        
-        try {
-          if (indent) {
-            style.insertRule(`${selector} p:first-child {text-indent:-${indent * (-0.003664154103852596)}px}`, 0);
-            style.insertRule(`${selector} p {padding-left:${indent * (-0.003664154103852596)}px}`, 0);
-          }
-          
-          if (left) {
-            style.insertRule(`${selector} p {padding-left:${left * (-0.003664154103852596)}px}`, 0);
-          }
-          
-          if (right) {
-            style.insertRule(`${selector} p {padding-right:${right * (-0.003664154103852596)}px}`, 0);
-          }
-          
-          style.insertRule(`${selector} {${css.join(";")}}`, 0);
-          
-          if (line_spacing) {
-            style.insertRule(`${selector} p {line-height:${line_spacing/100}}`, 0);
-          }
-        } catch (e) {
-          console.warn('ParaShape style rule 추가 오류:', e);
-        }
-      });
-    }
-    
-    // Style 스타일 생성
-    if (this.hwp.Style && typeof this.hwp.Style === 'object') {
-      Object.values(this.hwp.Style).forEach((Style, i) => {
-        if (!Style) return;
-        
-        const { en, char_shape_id, para_shape_id, local } = Style;
-        if (!(char_shape_id in this.hwp.CharShape) || !(para_shape_id in this.hwp.ParaShape)) return;
-        
-        const id = i;
-        const clsName = en && en.name ? en.name.replace(/\s/g, '-') : 
-                        local && local.name ? local.name.replace(/\s/g, '-') : `style-${id}`;
-        
-        const selector = `.hwp-Style-${id}-${clsName}`;
-        const css = [];
-        
-        // CharShape 속성 적용
-        const CharShape = this.hwp.CharShape[char_shape_id];
-        if (CharShape) {
-          const { standard_size, letter_spacing, font_stretch, font_attribute, color, font_id } = CharShape;
-          
-          if (standard_size) css.push(`font-size:${standard_size.hwpPt()}`);
-          if (color && color.font) css.push(`color:${color.font.hwpRGB()}`);
-          if (color && color.underline) css.push(`text-decoration-color:${color.underline.hwpRGB()}`);
-          
-          if (font_attribute) {
-            if (font_attribute.underline_color) {
-              css.push(`text-decoration-color:${font_attribute.underline_color.hwpRGB()}`);
-            }
-            if (font_attribute.underline) {
-              css.push(`text-decoration:${font_attribute.underline} ${font_attribute.strikethrough ? 'line-through' : ''}`);
-            }
-            if (font_attribute.underline_shape) {
-              css.push(`text-decoration-style:${font_attribute.underline_shape}`);
-            }
-            if (font_attribute.italic) {
-              css.push(`font-style:italic`);
-            }
-            if (font_attribute.bold) {
-              css.push(`font-weight:800`);
-            }
-          }
-        }
-        
-        // ParaShape 속성 적용
-        const ParaShape = this.hwp.ParaShape[para_shape_id];
-        if (ParaShape && ParaShape.align) {
-          css.push(`text-align:${ParaShape.align}`);
-        }
-        
-        try {
-          style.insertRule(`${selector} {${css.join(";")}}`, 0);
-        } catch (e) {
-          console.warn('Style rule 추가 오류:', e);
-        }
-      });
-    }
-  } catch (error) {
-    console.error('createStyle 함수 오류:', error);
-  }
-};
-// getText 함수 추가
-hwpjs.prototype.getText = function() {
-  try {
-    if (typeof this.hwp.Text !== 'string') {
-      this.hwp.Text = '';
-    }
-    return this.hwp.Text.replace(/(\n|\r|\r\n|\n\r)/g, '<br>');
-  } catch (error) {
-    console.error("getText 함수 오류:", error);
-    return "";
-  }
-};
-
-// getPrvText 함수 추가
-hwpjs.prototype.getPrvText = function () {
-  try {
-    if (!this.hwp.PrvText || !this.hwp.PrvText.content) {
-      return { PrvText: "" };
-    }
-    
-    const result = {
-      PrvText: this.textDecoder(this.hwp.PrvText.content, 'utf-16le'),
-    };
-    return result;
-  } catch (error) {
-    console.error("getPrvText 함수 오류:", error);
-    return { PrvText: "" };
-  }
-};
-
-// getPrvImage 함수 추가
-hwpjs.prototype.getPrvImage = function () {
-  try {
-    if (!this.hwp.PrvImage || !this.hwp.PrvImage.content) {
-      return null;
-    }
-    return this.getImage(this.hwp.PrvImage.content);
-  } catch (error) {
-    console.error("getPrvImage 함수 오류:", error);
-    return null;
-  }
-};
-
-// getImage 함수 추가
-hwpjs.prototype.getImage = function(uint_8, type = "png") {
-  try {
-    const image = new Image();
-    image.src = URL.createObjectURL(new Blob([new Uint8Array(uint_8)], { type: `image/${type}` }));
-    return image;
-  } catch (error) {
-    console.error("getImage 함수 오류:", error);
-    return null;
-  }
-};
-
-// getBinImage 함수 추가
-hwpjs.prototype.getBinImage = function(i) {
-  try {
-    // BIN_DATA 찾기
-    const doc = Array.isArray(this.hwp.DocInfo.data) ? 
-      this.hwp.DocInfo.data.filter(doc => {
-        return doc && doc.name === "HWPTAG_BIN_DATA" && doc.attribute && doc.attribute.image === true;
-      }) : [];
-    
-    if (!doc || !doc[i]) {
-      console.warn("이미지 데이터를 찾을 수 없습니다:", i);
-      return null;
-    }
-    
-    const path = doc[i].attribute.path;
-    const extension = doc[i].attribute.extension;
-    
-    if (!path || !extension) {
-      console.warn("이미지 경로 또는 확장자 정보가 없습니다");
-      return null;
-    }
-    
-    // 이미지 파일 인덱스 찾기
-    const Idx = Object.values(this.cfb.FullPaths).findIndex(fullpath => {
-      return fullpath === path;
-    });
-    
-    if (Idx === -1 || !this.cfb.FileIndex[Idx]) {
-      console.warn("이미지 파일을 찾을 수 없습니다:", path);
-      return null;
-    }
-    
-    const data = this.cfb.FileIndex[Idx];
-    
-    // 압축 해제
-    const uncompress = pako.inflate(this.uint_8(data.content), { windowBits: -15 });
-    
-    // 이미지 생성
-    const image = new Image();
-    image.src = URL.createObjectURL(new Blob([new Uint8Array(uncompress)], { type: `image/${extension}` }));
-    
-    return image;
-  } catch (error) {
-    console.error("getBinImage 함수 오류:", error);
-    return null;
-  }
-};
-
-// textDecoder 함수 추가
-hwpjs.prototype.textDecoder = function(uint_8, type = 'utf8') {
-  try {
-    uint_8 = new Uint8Array(uint_8);
-    const Decoder = new TextDecoder(type);
-    return Decoder.decode(uint_8);
-  } catch (error) {
-    console.error("textDecoder 함수 오류:", error);
-    return "";
-  }
-};
-
-// uint_8 함수 추가
-hwpjs.prototype.uint_8 = function(uint_8) {
-  try {
-    return new Uint8Array(uint_8);
-  } catch (error) {
-    console.error("uint_8 함수 오류:", error);
-    return new Uint8Array();
-  }
-};
-
-// hwpTextCss 함수 추가 (간단한 버전)
-hwpjs.prototype.hwpTextCss = function(paragraph, opt = true) {
-  try {
-    const result = [];
-    
-    // paragraph가 없으면 빈 div 반환
-    if (!paragraph) {
-      const div = document.createElement('div');
-      div.textContent = '';
-      return [div];
-    }
-    
-    const { text, parashape, Style, line_segment, start_line, bullet } = paragraph;
-    
-    let div = document.createElement('div');
-    const container = document.createElement('div');
-    container.style.position = "relative";
-    
-    div.appendChild(container);
-    
-    // 스타일 클래스 적용
-    if (Style) {
-      container.classList.add(`${Style}`);
-    }
-    
-    if (parashape) {
-      container.classList.add(parashape);
-    } else {
-      container.classList.add("para-normal");
-    }
-    
-    // Line segment 처리
-    if (line_segment && opt !== false) {
-      div.style.top = parseFloat(line_segment[0].start_line).hwpInch();
-      div.style.position = "absolute";
-    }
-    
-    // 시작 라인 정보 저장
-    div.dataset.start_line = start_line;
-    
-    // 글머리 기호 처리
-    if (bullet !== undefined) {
-      const span = document.createElement('span');
-      span.style.position = "absolute";
-      span.style.top = "0";
-      span.style.display = "inline-flex";
-      
-      if (bullet.width) {
-        span.style.width = `${bullet.width / 100 * 2}pt`;
-      }
-      
-      if (bullet.space) {
-        div.style.marginLeft = `${bullet.space.hwpInch()}`;
-      }
-      
-      if (bullet.char && bullet.char.char) {
-        span.innerHTML = bullet.char.char;
-      }
-      
-      div.appendChild(span);
-    }
-    
-    // 텍스트가 없으면 빈 p 태그 생성
-    if (!text) {
-      const p = document.createElement('p');
-      p.className = "para-normal";
-      if (parashape) p.classList.add(parashape);
-      container.appendChild(p);
-      return [div];
-    }
-    
-    // line_segment가 없으면 텍스트만 표시
-    if (!line_segment) {
-      container.textContent = text;
-      return [div];
-    }
-    
-    // 라인 세그먼트가 있으면 p 태그로 분리
-    for (let i = 0; i < line_segment.length; i++) {
-      const p = document.createElement('p');
-      
-      // bullet 처리
-      if (bullet !== undefined) {
-        if (bullet.width) {
-          p.style.paddingLeft = `${bullet.width / 100 * 2}pt`;
-        } else {
-          p.style.paddingLeft = `15pt`;
-        }
-      }
-      
-      const start = line_segment[i].start_text;
-      if (line_segment[i].sagment_width) {
-        p.style.width = line_segment[i].sagment_width.hwpInch();
-      }
-      
-      const end = i < line_segment.length - 1 ? line_segment[i+1].start_text : text.length;
-      p.dataset.start = start;
-      p.dataset.end = end;
-      
-      // 텍스트 분할
-      p.textContent = text.substring(start, end);
-      
-      container.appendChild(p);
-    }
-    
-    result.push(div);
-    return result;
-  } catch (error) {
-    console.error("hwpTextCss 함수 오류:", error);
-    const div = document.createElement('div');
-    div.textContent = paragraph && paragraph.text ? paragraph.text : '';
-    return [div];
-  }
-};
-
-// getHtml 함수 추가 (간단한 버전)
-hwpjs.prototype.getHtml = function() {
-  try {
-    const wrapper = document.createElement('article');
-    wrapper.className = "hwp-wrapper";
-    
-    const page = document.createElement('section');
-    page.className = "hwp-page";
-    
-    // 페이지 기본 스타일 설정
-    page.style.position = "relative";
-    page.style.width = "100%";
-    page.style.padding = "20px";
-    page.style.boxSizing = "border-box";
-    page.style.backgroundColor = "white";
-    
-    const content = document.createElement('div');
-    content.className = "hwp-content";
-    
-    page.appendChild(content);
-    wrapper.appendChild(page);
-    
-    // ObjectHwp 함수로 콘텐츠 가져오기
-    try {
-      const result = this.ObjectHwp();
-      
-      if (Array.isArray(result) && result.length > 0) {
-        result.forEach(data => {
-          if (data.type === "tbl ") {
-            // 테이블 렌더링
-            try {
-              const tableElements = this.hwpTable(data);
-              tableElements.forEach(element => {
-                content.appendChild(element);
-              });
-            } catch (tableError) {
-              console.warn("테이블 렌더링 오류:", tableError);
-              
-              // 오류 시 텍스트로 대체
-              const div = document.createElement('div');
-              div.textContent = "[테이블 렌더링 오류]";
-              content.appendChild(div);
-            }
-          } else if (data.type === "$rec") {
-            // 텍스트 박스 렌더링
-            try {
-              if (data.textbox && data.textbox.paragraph) {
-                const div = document.createElement('div');
-                div.style.border = "1px solid #ddd";
-                div.style.padding = "10px";
-                div.style.margin = "10px 0";
-                
-                data.textbox.paragraph.forEach(para => {
-                  if (para && para.text) {
-                    const p = document.createElement('p');
-                    p.textContent = para.text;
-                    div.appendChild(p);
-                  }
-                });
-                
-                content.appendChild(div);
-              }
-            } catch (boxError) {
-              console.warn("텍스트 박스 렌더링 오류:", boxError);
-            }
-          } else if (data.type === "paragraph") {
-            // 단락 렌더링
-            try {
-              const paraElements = this.hwpTextCss(data.paragraph);
-              paraElements.forEach(element => {
-                content.appendChild(element);
-              });
-            } catch (paraError) {
-              console.warn("단락 렌더링 오류:", paraError);
-              
-              // 오류 시 텍스트로 대체
-              if (data.paragraph && data.paragraph.text) {
-                const div = document.createElement('div');
-                div.textContent = data.paragraph.text;
-                content.appendChild(div);
-              }
-            }
-          }
-        });
-      } else {
-        // 결과가 없으면 텍스트만 표시
-        const div = document.createElement('div');
-        div.textContent = this.getText();
-        content.appendChild(div);
-      }
-    } catch (objectError) {
-      console.error("ObjectHwp 처리 오류:", objectError);
-      
-      // 오류 시 텍스트만 표시
-      const div = document.createElement('div');
-      div.textContent = this.getText();
-      content.appendChild(div);
-    }
-    
-    return wrapper.outerHTML;
-  } catch (error) {
-    console.error("getHtml 함수 오류:", error);
-    
-    // 심각한 오류 시 기본 HTML 반환
-    return `<div style="padding: 20px;">${this.getText().replace(/\n/g, '<br>')}</div>`;
-  }
-};
-
-// getPagedef 함수 추가
-hwpjs.prototype.getPagedef = function() {
-  try {
-    let result = [];
-    
-    if (Array.isArray(this.hwp.BodyText.data)) {
-      this.hwp.BodyText.data.forEach(section => {
-        if (!section.data) return;
-        
-        Object.values(section.data).forEach(item => {
-          if (item.name === "HWPTAG_PAGE_DEF") {
-            result.push(item);
-          }
-        });
-      });
-    }
-    
-    return result;
-  } catch (error) {
-    console.error("getPagedef 함수 오류:", error);
-    return [];
-  }
-};

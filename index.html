@@ -16,29 +16,27 @@
             padding: 20px;
             min-height: 400px;
         }
-        .hwp-page {
-            margin-bottom: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
         .file-input {
             margin-bottom: 20px;
         }
-        .info {
-            margin-bottom: 20px;
+        .status {
+            margin: 10px 0;
             color: #555;
+        }
+        .error {
+            color: red;
         }
     </style>
 </head>
 <body>
     <h1>한글 문서 뷰어</h1>
     
-    <div class="info">
-        <p>로컬 한글(.hwp) 파일을 선택하여 브라우저에서 바로 볼 수 있습니다.</p>
-    </div>
-    
     <div class="file-input">
         <input type="file" id="hwp-file" accept=".hwp" />
     </div>
+    
+    <div id="status" class="status">파일을 선택해주세요.</div>
+    <div id="error" class="error"></div>
     
     <div id="hwp-container"></div>
 
@@ -46,34 +44,84 @@
     <script>
         const container = document.getElementById('hwp-container');
         const fileInput = document.getElementById('hwp-file');
+        const statusEl = document.getElementById('status');
+        const errorEl = document.getElementById('error');
         
-        fileInput.addEventListener('change', function(e) {
+        function showError(message) {
+            errorEl.textContent = message;
+            console.error(message);
+        }
+        
+        function updateStatus(message) {
+            statusEl.textContent = message;
+            console.log(message);
+        }
+        
+        // 모든 의존성이 로드되었는지 확인
+        function checkDependencies() {
+            if (typeof CFB === 'undefined') {
+                showError('CFB 라이브러리가 로드되지 않았습니다.');
+                return false;
+            }
+            
+            if (typeof pako === 'undefined') {
+                showError('pako 라이브러리가 로드되지 않았습니다.');
+                return false;
+            }
+            
+            if (typeof hwpjs === 'undefined') {
+                showError('hwpjs 라이브러리가 로드되지 않았습니다.');
+                return false;
+            }
+            
+            return true;
+        }
+        
+        fileInput.addEventListener('change', async function(e) {
+            errorEl.textContent = ''; // 이전 오류 메시지 지우기
+            
+            if (!checkDependencies()) {
+                return;
+            }
+            
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file) {
+                updateStatus('파일을 선택해주세요.');
+                return;
+            }
             
-            container.innerHTML = '문서를 로드하는 중입니다...';
+            updateStatus('문서를 로드하는 중입니다...');
+            container.innerHTML = '';
             
-            const reader = new FileReader();
-            reader.onload = function(e) {
+            try {
+                // 파일을 ArrayBuffer로 읽기
+                const arrayBuffer = await file.arrayBuffer();
+                updateStatus('파일을 읽었습니다. 처리 중...');
+                
+                // 디버깅용 정보
+                console.log('File size:', arrayBuffer.byteLength, 'bytes');
+                
+                // hwpjs 객체 생성 시도
                 try {
-                    // hwpjs 객체 생성 및 문서 파싱
-                    const hwp = new hwpjs(e.target.result);
+                    const hwp = new hwpjs(arrayBuffer);
+                    updateStatus('문서를 파싱했습니다. 렌더링 중...');
                     
                     // HTML로 변환하여 표시
                     container.innerHTML = hwp.getHtml();
-                    console.log('HWP 파일 로드 완료');
-                } catch (error) {
-                    console.error('HWP 파일 로드 실패:', error);
-                    container.innerHTML = '<div style="color: red;">HWP 파일 로드에 실패했습니다.</div>';
+                    updateStatus('HWP 파일 로드 완료');
+                } catch (parseError) {
+                    showError('문서 파싱 중 오류 발생: ' + parseError.message);
+                    console.error('파싱 오류 세부정보:', parseError);
                 }
-            };
-            
-            reader.onerror = function() {
-                container.innerHTML = '<div style="color: red;">파일을 읽는 중 오류가 발생했습니다.</div>';
-            };
-            
-            // 파일을 ArrayBuffer로 읽기
-            reader.readAsArrayBuffer(file);
+            } catch (error) {
+                showError('파일 읽기 오류: ' + error.message);
+                console.error('파일 읽기 오류 세부정보:', error);
+            }
+        });
+        
+        // 페이지 로드 완료 시 의존성 체크
+        window.addEventListener('load', function() {
+            checkDependencies();
         });
     </script>
 </body>

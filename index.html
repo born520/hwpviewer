@@ -1,35 +1,30 @@
-```html
- <!DOCTYPE html>
- <html>
- <head>
-     <title>HWP.js Test</title>
-     <meta charset="UTF-8">
- </head>
- <body>
-     <div id="hwp-container"></div>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HWP.js Test</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div id="hwp-container"></div>
 
-     <script src="https://cdn.jsdelivr.net/npm/hwp.js@latest/dist/hwp.js"></script>
-     <script>
-         const container = document.getElementById('hwp-container');
+    <script src="https://cdn.jsdelivr.net/npm/hwp.js@latest/dist/hwp.js"></script>
+    <script>
+        const container = document.getElementById('hwp-container');
 
-         HWP.open(
-             'test.hwp', // HWP 파일 이름
-             container,    // HTML을 표시할 div
-             {
-                 type: 'array-buffer' // 파일 로딩 방식
-             }
-         )
-         .then(function() {
-             console.log('HWP 파일 로드 완료');
-         })
-         .catch(function(error) {
-             console.error('HWP 파일 로드 실패:', error);
-             container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
-         });
-     </script>
- </body>
- </html>
- ```
-
- *   **핵심:**  `HWP.open('test.hwp', ...)` 부분에서 `test.hwp`는 `index.html`과 *같은 폴더*에 있는 HWP 파일을 가리킵니다.  다른 폴더에 있다면 상대 경로 또는 절대 경로를 사용해야 합니다.
- *    CDN을 통해서 hwp.js를 가져옵니다.
+        HWP.open(
+            'test.hwp',
+            container,
+            {
+                type: 'array-buffer'
+            }
+        )
+        .then(function() {
+            console.log('HWP 파일 로드 완료');
+        })
+        .catch(function(error) {
+            console.error('HWP 파일 로드 실패:', error);
+            container.innerText = 'HWP 파일 로드에 실패했습니다. 콘솔을 확인하세요.';
+        });
+    </script>
+</body>
+</html>

@@ -469,3 +469,287 @@
   
   return hwpjs;
 }));
+// hwpjs 프로토타입에 createStyle 함수 추가
+hwpjs.prototype.createStyle = function () {
+  try {
+    const head = document.head || document.getElementsByTagName('head')[0];
+    head.appendChild(document.createElement('style'));
+    const style = document.styleSheets[document.styleSheets.length - 1];
+    
+    // FaceName 스타일 생성
+    if (this.hwp.FaceName && typeof this.hwp.FaceName === 'object') {
+      Object.values(this.hwp.FaceName).forEach((FaceName, i) => {
+        if (!FaceName) return;
+        
+        const { font, font_type_info } = FaceName;
+        if (!font || !font_type_info) return;
+        
+        const id = i;
+        const selector = `.hwp-FaceName-${id}`;
+        const css = [];
+        
+        try {
+          css.push(`font-family:${font.name}, ${font_type_info.serif ? "sans-serif" : "serif"}`);
+          if(font_type_info.bold) {
+            css.push(`font-weight:800`);
+          }
+        } catch (e) {
+          console.warn('Font style 생성 오류:', e);
+        }
+        
+        try {
+          style.insertRule(`${selector}{${css.join(";")}}`, 0);
+        } catch (e) {
+          console.warn('Style rule 추가 오류:', e);
+        }
+      });
+    }
+    
+    // CharShape 스타일 생성
+    if (this.hwp.CharShape && typeof this.hwp.CharShape === 'object') {
+      Object.values(this.hwp.CharShape).forEach((CharShape, i) => {
+        if (!CharShape) return;
+        
+        const id = i;
+        const selector = `.hwp-CharShape-${id}`;
+        const { standard_size, letter_spacing, font_stretch, font_attribute, color, font_id } = CharShape;
+        
+        // 기본 스타일 속성 설정
+        const css = [];
+        
+        if (standard_size) css.push(`font-size:${standard_size.hwpPt()}`);
+        if (color && color.font) css.push(`color:${color.font.hwpRGB()}`);
+        if (color && color.underline) css.push(`text-decoration-color:${color.underline.hwpRGB()}`);
+        
+        if(font_attribute) {
+          if(font_attribute.underline_color) {
+            css.push(`text-decoration-color:${font_attribute.underline_color.hwpRGB()}`);
+          }
+          if(font_attribute.underline) {
+            css.push(`text-decoration:${font_attribute.underline} ${font_attribute.strikethrough ? 'line-through' : ''}`);
+          }
+          if(font_attribute.underline_shape) {
+            css.push(`text-decoration-style:${font_attribute.underline_shape}`);
+          }
+          if(font_attribute.italic){
+            css.push(`font-style:italic`);
+          }
+          if(font_attribute.bold){
+            css.push(`font-weight:800`);
+          }
+        }
+        
+        if(letter_spacing){
+          css.push(`letter-spacing:${letter_spacing.ko/100}em`);
+        }
+        
+        try {
+          style.insertRule(`${selector}{${css.join(";")}}`, 0);
+          
+          // 언어별 폰트 스타일 적용
+          if (font_id) {
+            for (const [name, Idx] of Object.entries(font_id)) {
+              if (this.hwp.FaceName[Idx]) {
+                const { font, font_type_info } = this.hwp.FaceName[Idx];
+                const selector = `.hwp-CharShape-${id}.lang-${name}`;
+                const css = [];
+                
+                try {
+                  if (font && font.name) {
+                    if (font_type_info && typeof font_type_info.serif !== 'undefined') {
+                      css.push(`font-family:"${font.name}", ${font_type_info.serif ? "sans-serif" : "serif"}`);
+                    } else {
+                      css.push(`font-family:"${font.name}"`);
+                    }
+                  }
+                } catch(e) {
+                  console.warn('Language font style 생성 오류:', e);
+                }
+                
+                if(font_stretch && font_stretch[name]) {
+                  css.push(`font-stretch:${font_stretch[name]}%`);
+                }
+                
+                if(letter_spacing && letter_spacing[name]) {
+                  css.push(`letter-spacing:${letter_spacing[name]/100}em`);
+                }
+                
+                try {
+                  style.insertRule(`${selector}{${css.join(";")}}`, 0);
+                } catch (e) {
+                  console.warn('Language style rule 추가 오류:', e);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('CharShape style rule 추가 오류:', e);
+        }
+      });
+    }
+    
+    // BorderFill 스타일 생성
+    if (this.hwp.BorderFill && typeof this.hwp.BorderFill === 'object') {
+      Object.values(this.hwp.BorderFill).forEach((BorderFill, i) => {
+        if (!BorderFill) return;
+        
+        const id = i;
+        const selector = `.hwp-BorderFill-${id}`;
+        const { border, fill } = BorderFill;
+        const css = [];
+        
+        if (border) {
+          if (border.line) {
+            if (border.line.top) css.push(`border-top-style:${border.line.top.BorderStyle()}`);
+            if (border.line.right) css.push(`border-right-style:${border.line.right.BorderStyle()}`);
+            if (border.line.bottom) css.push(`border-bottom-style:${border.line.bottom.BorderStyle()}`);
+            if (border.line.left) css.push(`border-left-style:${border.line.left.BorderStyle()}`);
+          }
+          
+          if (border.width) {
+            if (border.width.top) {
+              const bStyle = border.line && border.line.top ? border.line.top.BorderStyle() : '';
+              css.push(`border-top-width:${bStyle === "double" ? border.width.top.borderWidth() * 2 : border.width.top.borderWidth()}mm`);
+            }
+            if (border.width.right) {
+              const bStyle = border.line && border.line.right ? border.line.right.BorderStyle() : '';
+              css.push(`border-right-width:${bStyle === "double" ? border.width.right.borderWidth() * 2 : border.width.right.borderWidth()}mm`);
+            }
+            if (border.width.bottom) {
+              const bStyle = border.line && border.line.bottom ? border.line.bottom.BorderStyle() : '';
+              css.push(`border-bottom-width:${bStyle === "double" ? border.width.bottom.borderWidth() * 2 : border.width.bottom.borderWidth()}mm`);
+            }
+            if (border.width.left) {
+              const bStyle = border.line && border.line.left ? border.line.left.BorderStyle() : '';
+              css.push(`border-left-width:${bStyle === "double" ? border.width.left.borderWidth() * 2 : border.width.left.borderWidth()}mm`);
+            }
+          }
+          
+          if (border.color) {
+            if (border.color.top) css.push(`border-top-color:${border.color.top.hwpRGB()}`);
+            if (border.color.right) css.push(`border-right-color:${border.color.right.hwpRGB()}`);
+            if (border.color.bottom) css.push(`border-bottom-color:${border.color.bottom.hwpRGB()}`);
+            if (border.color.left) css.push(`border-left-color:${border.color.left.hwpRGB()}`);
+          }
+        }
+        
+        if (fill && fill.background_color) {
+          css.push(`background-color:${fill.background_color.hwpRGB()}`);
+        }
+        
+        try {
+          style.insertRule(`${selector}{${css.join(";")}}`, 0);
+        } catch (e) {
+          console.warn('BorderFill style rule 추가 오류:', e);
+        }
+      });
+    }
+    
+    // ParaShape 스타일 생성
+    if (this.hwp.ParaShape && typeof this.hwp.ParaShape === 'object') {
+      Object.values(this.hwp.ParaShape).forEach((ParaShape, i) => {
+        if (!ParaShape) return;
+        
+        const { align, margin, line_spacing_type, vertical_align } = ParaShape;
+        const { line_spacing, paragraph_spacing, indent, left, right } = margin || {};
+        
+        const id = i;
+        const selector = `.hwp-ParaShape-${id}`;
+        const css = [];
+        
+        if (align) css.push(`text-align:${align}`);
+        
+        if (line_spacing && line_spacing_type === "%") {
+          css.push(`line-height:${line_spacing/100}em`);
+        }
+        
+        if (paragraph_spacing) {
+          if (paragraph_spacing.top) css.push(`margin-top:${paragraph_spacing.top.hwpPt(true) / 2}pt`);
+          if (paragraph_spacing.bottom) css.push(`margin-bottom:${paragraph_spacing.bottom.hwpPt(true) / 2}pt`);
+        }
+        
+        try {
+          if (indent) {
+            style.insertRule(`${selector} p:first-child {text-indent:-${indent * (-0.003664154103852596)}px}`, 0);
+            style.insertRule(`${selector} p {padding-left:${indent * (-0.003664154103852596)}px}`, 0);
+          }
+          
+          if (left) {
+            style.insertRule(`${selector} p {padding-left:${left * (-0.003664154103852596)}px}`, 0);
+          }
+          
+          if (right) {
+            style.insertRule(`${selector} p {padding-right:${right * (-0.003664154103852596)}px}`, 0);
+          }
+          
+          style.insertRule(`${selector} {${css.join(";")}}`, 0);
+          
+          if (line_spacing) {
+            style.insertRule(`${selector} p {line-height:${line_spacing/100}}`, 0);
+          }
+        } catch (e) {
+          console.warn('ParaShape style rule 추가 오류:', e);
+        }
+      });
+    }
+    
+    // Style 스타일 생성
+    if (this.hwp.Style && typeof this.hwp.Style === 'object') {
+      Object.values(this.hwp.Style).forEach((Style, i) => {
+        if (!Style) return;
+        
+        const { en, char_shape_id, para_shape_id, local } = Style;
+        if (!(char_shape_id in this.hwp.CharShape) || !(para_shape_id in this.hwp.ParaShape)) return;
+        
+        const id = i;
+        const clsName = en && en.name ? en.name.replace(/\s/g, '-') : 
+                        local && local.name ? local.name.replace(/\s/g, '-') : `style-${id}`;
+        
+        const selector = `.hwp-Style-${id}-${clsName}`;
+        const css = [];
+        
+        // CharShape 속성 적용
+        const CharShape = this.hwp.CharShape[char_shape_id];
+        if (CharShape) {
+          const { standard_size, letter_spacing, font_stretch, font_attribute, color, font_id } = CharShape;
+          
+          if (standard_size) css.push(`font-size:${standard_size.hwpPt()}`);
+          if (color && color.font) css.push(`color:${color.font.hwpRGB()}`);
+          if (color && color.underline) css.push(`text-decoration-color:${color.underline.hwpRGB()}`);
+          
+          if (font_attribute) {
+            if (font_attribute.underline_color) {
+              css.push(`text-decoration-color:${font_attribute.underline_color.hwpRGB()}`);
+            }
+            if (font_attribute.underline) {
+              css.push(`text-decoration:${font_attribute.underline} ${font_attribute.strikethrough ? 'line-through' : ''}`);
+            }
+            if (font_attribute.underline_shape) {
+              css.push(`text-decoration-style:${font_attribute.underline_shape}`);
+            }
+            if (font_attribute.italic) {
+              css.push(`font-style:italic`);
+            }
+            if (font_attribute.bold) {
+              css.push(`font-weight:800`);
+            }
+          }
+        }
+        
+        // ParaShape 속성 적용
+        const ParaShape = this.hwp.ParaShape[para_shape_id];
+        if (ParaShape && ParaShape.align) {
+          css.push(`text-align:${ParaShape.align}`);
+        }
+        
+        try {
+          style.insertRule(`${selector} {${css.join(";")}}`, 0);
+        } catch (e) {
+          console.warn('Style rule 추가 오류:', e);
+        }
+      });
+    }
+  } catch (error) {
+    console.error('createStyle 함수 오류:', error);
+  }
+};

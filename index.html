@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>HWP.js Viewer</title>
+    <title>HWP.js Viewer with Formatting</title>
     <meta charset="UTF-8">
     <!-- 필요한 라이브러리 추가 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.0.4/pako.min.js"></script>
@@ -26,10 +26,32 @@
         .error {
             color: red;
         }
-        #hwp-text {
-            white-space: pre-wrap;
-            font-family: 'Malgun Gothic', sans-serif;
-            line-height: 1.5;
+        .hwp-page {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 1px solid #eee;
+            background: white;
+        }
+        .tab-buttons {
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .tab-button.active {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
     </style>
 </head>
@@ -43,12 +65,40 @@
     <div id="status" class="status">파일을 선택해주세요.</div>
     <div id="error" class="error"></div>
     
-    <div id="hwp-container">
-        <div id="hwp-text"></div>
+    <div class="tab-buttons">
+        <button class="tab-button active" data-tab="text-tab">텍스트</button>
+        <button class="tab-button" data-tab="formatted-tab">서식</button>
+    </div>
+    
+    <div id="text-tab" class="tab-content active">
+        <div id="hwp-text" style="white-space: pre-wrap; font-family: 'Malgun Gothic', sans-serif;"></div>
+    </div>
+    
+    <div id="formatted-tab" class="tab-content">
+        <div id="hwp-container"></div>
     </div>
 
     <script src="hwpjs.js"></script>
     <script>
+        // 탭 전환 기능
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                // 모든 탭 버튼에서 active 클래스 제거
+                document.querySelectorAll('.tab-button').forEach(b => {
+                    b.classList.remove('active');
+                });
+                
+                // 모든 탭 콘텐츠에서 active 클래스 제거
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                // 클릭된 버튼과 해당 콘텐츠에 active 클래스 추가
+                button.classList.add('active');
+                document.getElementById(button.dataset.tab).classList.add('active');
+            });
+        });
+        
         const container = document.getElementById('hwp-container');
         const hwpText = document.getElementById('hwp-text');
         const fileInput = document.getElementById('hwp-file');
@@ -65,33 +115,73 @@
             console.log(message);
         }
         
-        // 모든 의존성이 로드되었는지 확인
-        function checkDependencies() {
-            if (typeof CFB === 'undefined') {
-                showError('CFB 라이브러리가 로드되지 않았습니다.');
-                return false;
+        // hwpjs 객체의 메소드 래핑 및 에러 처리 
+        function safeHwpMethod(hwpObj, methodName, ...args) {
+            try {
+                // 원래 메소드 실행
+                return hwpObj[methodName](...args);
+            } catch (error) {
+                console.warn(`${methodName} 메소드 실행 중 오류:`, error);
+                
+                // 특정 오류 패턴 처리
+                if (error.message.includes("Cannot read properties of undefined")) {
+                    if (methodName === "getHtml") {
+                        // getHtml 메소드에서 에러 발생 시 getText로 폴백
+                        return `<div style="padding: 20px; font-family: 'Malgun Gothic', sans-serif;">
+                                <h3>서식 렌더링에 문제가 발생했습니다.</h3>
+                                <p>텍스트만 표시합니다:</p>
+                                <div style="white-space: pre-wrap;">${hwpObj.getText()}</div>
+                                </div>`;
+                    }
+                }
+                
+                return null;
             }
-            
-            if (typeof pako === 'undefined') {
-                showError('pako 라이브러리가 로드되지 않았습니다.');
-                return false;
+        }
+        
+        // 오류 가능성 있는 hwpjs 객체 생성 함수 래핑
+        function createSafeHwpjs(arrayBuffer) {
+            try {
+                // hwpjs 객체 수정본 생성
+                const hwp = new hwpjs(arrayBuffer);
+                
+                // 안전한 메소드 래핑
+                const originalGetHtml = hwp.getHtml.bind(hwp);
+                hwp.getHtml = function() {
+                    try {
+                        // 원래의 ObjectHwp 함수에서 발생하는 undefined.address 오류 방지
+                        const originalObjectHwp = hwp.ObjectHwp;
+                        hwp.ObjectHwp = function() {
+                            try {
+                                return originalObjectHwp.call(hwp);
+                            } catch (error) {
+                                console.warn("ObjectHwp 메소드 오류:", error);
+                                return []; // 빈 객체 배열 반환
+                            }
+                        };
+                        
+                        return originalGetHtml();
+                    } catch (error) {
+                        console.warn("getHtml 메소드 오류:", error);
+                        return `<div style="padding: 20px;">
+                                <h3>서식 렌더링에 문제가 발생했습니다.</h3>
+                                <p>텍스트만 표시합니다:</p>
+                                <div style="white-space: pre-wrap;">${hwp.getText()}</div>
+                                </div>`;
+                    }
+                };
+                
+                return hwp;
+            } catch (error) {
+                console.error("hwpjs 객체 생성 오류:", error);
+                throw error;
             }
-            
-            if (typeof hwpjs === 'undefined') {
-                showError('hwpjs 라이브러리가 로드되지 않았습니다.');
-                return false;
-            }
-            
-            return true;
         }
         
         fileInput.addEventListener('change', async function(e) {
             errorEl.textContent = ''; // 이전 오류 메시지 지우기
             hwpText.textContent = ''; // 이전 내용 지우기
-            
-            if (!checkDependencies()) {
-                return;
-            }
+            container.innerHTML = ''; // 이전 내용 지우기
             
             const file = e.target.files[0];
             if (!file) {
@@ -106,38 +196,27 @@
                 const arrayBuffer = await file.arrayBuffer();
                 updateStatus('파일을 읽었습니다. 처리 중...');
                 
-                // 디버깅용 정보
-                console.log('File size:', arrayBuffer.byteLength, 'bytes');
-                
-                // hwpjs 객체 생성 시도
                 try {
-                    const hwp = new hwpjs(arrayBuffer);
-                    updateStatus('문서를 파싱했습니다.');
+                    // 안전한 hwpjs 객체 생성
+                    const hwp = createSafeHwpjs(arrayBuffer);
                     
-                    // 전체 HTML 렌더링 대신 텍스트만 추출하여 표시
-                    // 이렇게 하면 복잡한 구조에서 발생하는 오류를 우회할 수 있습니다
+                    // 텍스트 추출 및 표시
                     const extractedText = hwp.getText();
                     hwpText.textContent = extractedText;
-                    updateStatus('HWP 파일에서 텍스트 추출 완료');
                     
-                    // 이미지가 있는 경우 표시 시도
+                    // 서식 있는 HTML 추출 및 표시 시도
                     try {
-                        const imgCount = hwp.hwp.ImageCnt || 0;
-                        if (imgCount > 0) {
-                            updateStatus(`HWP 파일에서 텍스트 추출 완료 (이미지 ${imgCount}개 포함)`);
-                            for (let i = 0; i < imgCount; i++) {
-                                try {
-                                    const img = hwp.getBinImage(i);
-                                    container.appendChild(img);
-                                } catch (imgErr) {
-                                    console.warn('이미지 추출 오류:', imgErr);
-                                }
-                            }
-                        }
-                    } catch (imgCountErr) {
-                        console.warn('이미지 정보 확인 오류:', imgCountErr);
+                        const formattedHtml = hwp.getHtml();
+                        container.innerHTML = formattedHtml;
+                        updateStatus('HWP 파일 로드 완료');
+                    } catch (htmlError) {
+                        console.error('HTML 변환 오류:', htmlError);
+                        container.innerHTML = `<div style="padding: 20px; color: red;">
+                                              <h3>서식 렌더링에 문제가 발생했습니다.</h3>
+                                              <p>텍스트 탭에서 내용을 확인하세요.</p>
+                                              </div>`;
+                        updateStatus('텍스트만 추출 완료. 서식 렌더링 실패.');
                     }
-                    
                 } catch (parseError) {
                     showError('문서 파싱 중 오류 발생: ' + parseError.message);
                     console.error('파싱 오류 세부정보:', parseError);
@@ -146,11 +225,6 @@
                 showError('파일 읽기 오류: ' + error.message);
                 console.error('파일 읽기 오류 세부정보:', error);
             }
-        });
-        
-        // 페이지 로드 완료 시 의존성 체크
-        window.addEventListener('load', function() {
-            checkDependencies();
         });
     </script>
 </body>
